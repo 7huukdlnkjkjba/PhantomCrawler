@@ -1,32 +1,50 @@
-# PhantomCrawler - 七宗欲核心引擎 | 实战突破版
+# PhantomCrawler - 七宗欲核心引擎 | 实战突破优化版
 import asyncio
 import random
 import time
-from typing import Dict, List, Optional, Any, Callable
+import importlib.util
+from typing import Dict, List, Optional, Any, Callable, Set
 import httpx
+from urllib.parse import urlparse
 from src.modules.evasion.fingerprint_spoofer import FingerprintSpoofer
 from src.modules.behavior.behavior_simulator import BehaviorSimulator
 from src.modules.evasion.protocol_obfuscator import ProtocolObfuscator
+from src.modules.parsing.html_parser import HTMLParser
 from src.config import global_config
+
+# 动态检查playwright是否安装
+HAS_PLAYWRIGHT = importlib.util.find_spec('playwright') is not None
 
 class PhantomCrawler:
     """PhantomCrawler核心引擎类，整合所有功能模块"""
     
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None, auto_initialize: bool = True):
         # 初始化配置
-        if config_file:
-            from src.configs.config import Config
-            Config(config_file)  # 这将更新全局配置
+        try:
+            if config_file:
+                from src.configs.config import Config
+                Config(config_file)  # 这将更新全局配置
+        except Exception as e:
+            print(f"[七宗欲爬虫] 配置文件加载失败，使用默认配置: {str(e)}")
         
-        # 初始化核心模块
-        self.fingerprint_spoofer = FingerprintSpoofer()
-        self.behavior_simulator = BehaviorSimulator()
-        self.protocol_obfuscator = ProtocolObfuscator()
+        # 初始化核心模块（带有异常处理）
+        self.fingerprint_spoofer = None
+        self.behavior_simulator = None
+        self.protocol_obfuscator = None
+        self.seven_desires = None
         
-        # 七宗欲引擎实例
-        self.seven_desires = self.behavior_simulator.seven_desires
+        try:
+            self.fingerprint_spoofer = FingerprintSpoofer()
+            self.behavior_simulator = BehaviorSimulator()
+            self.protocol_obfuscator = ProtocolObfuscator()
+            
+            # 安全获取七宗欲引擎实例
+            if self.behavior_simulator and hasattr(self.behavior_simulator, 'seven_desires'):
+                self.seven_desires = self.behavior_simulator.seven_desires
+        except Exception as e:
+            print(f"[七宗欲爬虫] 核心模块初始化部分失败: {str(e)}")
         
-        # 爬虫状态
+        # 爬虫状态（实战优化）
         self.is_running = False
         self.session_id = self._generate_session_id()
         self.crawl_history = []
@@ -34,25 +52,50 @@ class PhantomCrawler:
         self.total_attempts = 0
         self.consecutive_failures = 0
         
-        # 当前策略（实战版）
+        # 新增实战状态指标
+        self.current_retry_round = 0
+        self.max_retry_rounds = 3
+        self.retry_interval_base = 2.0
+        self.playwright_available = HAS_PLAYWRIGHT
+        self.fingerprint_rotation_interval = 300  # 默认5分钟轮换一次指纹
+        
+        # 实战优化的策略配置
         self.current_strategies = {
-            'fingerprint': {'advanced': False, 'rotation_interval': 0},
+            'fingerprint': {'advanced': False, 'rotation_interval': 0, 'last_rotated': 0},
             'delay': 2.0,
             'request_chain': [],
             'playwright_strategy': 'normal',  # normal, stealth, aggressive
             'evasion_level': 0,  # 0-3，反检测等级
-            'risk_adjusted': False
+            'risk_adjusted': False,
+            'proxy_usage': 'auto',  # auto, required, disabled
+            'timeout_seconds': 30
         }
         
-        print(f"[七宗欲爬虫] 初始化完成，当前主导欲望: {self.seven_desires.dominant_desire}")
+        # 递归防护标志（实战增强）
+        self._analysis_in_progress = False
+        self._record_failure_in_progress = False
+        self._last_reset_time = time.time()
+        self._last_fingerprint_rotation = time.time()
+        
+        # 打印初始化信息
+        dominant_desire = getattr(self.seven_desires, 'dominant_desire', '未知') if self.seven_desires else '未知'
+        print(f"[七宗欲爬虫] 初始化完成，当前主导欲望: {dominant_desire}")
+        print(f"[七宗欲爬虫] Playwright支持: {'已启用' if self.playwright_available else '未安装，将使用备用方案'}")
         
         # 客户端实例
         self.http_client = None
         self.playwright_browser = None
         
+        # HTML解析器
+        self.html_parser = HTMLParser()
+        
         # 学习状态
         self.previous_state = None
         self.previous_action = None
+        
+        # 自动初始化
+        if auto_initialize:
+            self.initialize()
     
     def _generate_session_id(self) -> str:
         """生成唯一的会话ID"""
@@ -74,67 +117,336 @@ class PhantomCrawler:
     
     def _create_http_client(self) -> httpx.Client:
         """创建配置好的HTTP客户端"""
-        # 生成浏览器指纹
-        headers = self.fingerprint_spoofer.generate_fingerprint()
+        try:
+            # 生成浏览器指纹
+            headers = self.fingerprint_spoofer.generate_fingerprint()
+            
+            # 创建代理客户端
+            client = self.protocol_obfuscator.create_proxied_httpx_client()
+            
+            # 应用指纹
+            client = self.fingerprint_spoofer.configure_httpx_client(client)
+            client.headers.update(headers)
+            
+            return client
+        except Exception as e:
+            print(f"[七宗欲爬虫] 创建HTTP客户端失败: {str(e)}")
+            # 创建最小功能的客户端作为备份
+            return httpx.Client(timeout=30, follow_redirects=True)
+    
+    def _reset_session(self) -> None:
+        """重置爬虫会话 - 实战优化：避免长时间运行的资源泄露"""
+        try:
+            print(f"[七宗欲爬虫] 执行会话重置，清理资源...")
+            
+            # 关闭并重新创建HTTP客户端
+            if hasattr(self, 'http_client') and self.http_client:
+                try:
+                    self.http_client.close()
+                except:
+                    pass
+            self.http_client = self._create_http_client()
+            
+            # 刷新身份信息
+            self._refresh_identity()
+            
+            # 重置状态记录
+            self.current_retry_round = 0
+            self.success_streak = 0
+            
+            # 更新重置时间戳
+            self._last_reset_time = time.time()
+            
+            print(f"[七宗欲爬虫] 会话重置完成")
+        except Exception as e:
+            print(f"[七宗欲爬虫] 会话重置过程中发生错误: {str(e)}")
+    
+    def _record_crawl_history(self, url: str, response: httpx.Response, response_time: float, blocked: bool) -> None:
+        """安全记录爬取历史"""
+        try:
+            history_entry = {
+                'url': url,
+                'status_code': response.status_code,
+                'timestamp': time.time(),
+                'session_id': self.session_id,
+                'blocked': blocked,
+                'response_time': response_time
+            }
+            
+            # 限制历史记录长度，避免内存溢出
+            if hasattr(self, 'crawl_history'):
+                self.crawl_history.append(history_entry)
+                # 只保留最近1000条记录
+                if len(self.crawl_history) > 1000:
+                    self.crawl_history = self.crawl_history[-1000:]
+        except Exception as e:
+            print(f"[七宗欲爬虫] 记录历史失败: {str(e)}")
+    
+    def _apply_safe_default_strategy(self) -> None:
+        """应用安全的默认策略，当策略生成失败时使用"""
+        try:
+            self.current_strategies = {
+                'timeout_seconds': 30,
+                'retry_count': 2,
+                'delay_seconds': 1.5,
+                'proxy_strategy': 'rotate_per_attempt',
+                'fingerprint_strategy': 'regular',
+                'playwright_strategy': 'stealth'
+            }
+            print(f"[七宗欲爬虫] 已应用安全默认策略")
+        except Exception as e:
+            print(f"[七宗欲爬虫] 应用默认策略失败: {str(e)}")
+    
+    def _smart_fingerprint_rotation(self) -> None:
+        """智能指纹轮换策略 - 基于时间间隔和失败率"""
+        try:
+            current_time = time.time()
+            
+            # 根据失败率决定是否立即轮换
+            failure_rate = 0
+            if self.total_attempts > 0:
+                failure_rate = (self.total_attempts - len([h for h in self.crawl_history if not h.get('blocked', False)])) / self.total_attempts
+            
+            # 如果失败率超过50%，立即轮换
+            if failure_rate > 0.5:
+                print(f"[七宗欲爬虫] 失败率过高 ({failure_rate:.2f})，立即轮换指纹")
+                self._refresh_identity()
+                self._last_fingerprint_rotation = current_time
+                return
+            
+            # 根据时间间隔定期轮换
+            rotation_interval = self.fingerprint_rotation_interval
+            if current_time - self._last_fingerprint_rotation > rotation_interval:
+                print(f"[七宗欲爬虫] 达到指纹轮换时间间隔，执行轮换")
+                self._refresh_identity()
+                self._last_fingerprint_rotation = current_time
+        except Exception as e:
+            print(f"[七宗欲爬虫] 智能指纹轮换失败: {str(e)}")
+    
+    def _get_smart_delay(self, risk_level: float, request_index: int) -> float:
+        """智能计算延迟时间 - 基于风险等级、请求位置和当前状态"""
+        try:
+            # 基础延迟
+            base_delay = self.current_strategies.get('delay_seconds', 1.0)
+            
+            # 根据风险等级调整
+            risk_factor = 1.0 + (risk_level * 2.0)  # 风险越高延迟越长
+            
+            # 根据请求链位置调整
+            chain_factor = 1.0
+            if request_index == 0:
+                chain_factor = 0.5  # 第一个请求可以快一些
+            elif request_index > 0 and request_index < 3:
+                chain_factor = 1.5  # 中间请求稍微慢一些
+            
+            # 根据连续失败次数调整
+            failure_factor = 1.0
+            if self.consecutive_failures > 0:
+                failure_factor = 1.0 + (self.consecutive_failures * 0.5)
+            
+            # 计算最终延迟
+            final_delay = base_delay * risk_factor * chain_factor * failure_factor
+            
+            # 添加随机波动，避免固定模式
+            final_delay = final_delay * (0.9 + (0.2 * random.random()))
+            
+            # 限制最小和最大延迟
+            final_delay = max(0.5, min(final_delay, 10.0))
+            
+            return final_delay
+        except Exception as e:
+            print(f"[七宗欲爬虫] 计算智能延迟失败: {str(e)}")
+            # 返回安全默认值
+            return 1.0 + (0.5 * random.random())
+    
+    def crawl_iterative(self, start_url: str, max_depth: int = 2, 
+                        same_domain_only: bool = True, 
+                        include_patterns: Optional[List[str]] = None,
+                        exclude_patterns: Optional[List[str]] = None,
+                        max_urls: Optional[int] = None) -> Dict[str, Any]:
+        """
+        执行迭代爬取，从起始URL开始，自动提取和爬取下一页链接
         
-        # 创建代理客户端
-        client = self.protocol_obfuscator.create_proxied_httpx_client()
+        Args:
+            start_url: 起始URL
+            max_depth: 最大爬取深度（0表示只爬取起始URL）
+            same_domain_only: 是否只爬取相同域名的链接
+            include_patterns: 包含的URL模式列表
+            exclude_patterns: 排除的URL模式列表
+            max_urls: 最大爬取的URL数量，None表示不限制
+            
+        Returns:
+            包含所有爬取结果的字典
+        """
+        if not self.is_running:
+            self.initialize()
         
-        # 应用指纹
-        client = self.fingerprint_spoofer.configure_httpx_client(client)
-        client.headers.update(headers)
+        # 初始化数据结构
+        visited_urls: Set[str] = set()
+        results: Dict[str, Dict[str, Any]] = {}
+        queue = [(start_url, 0)]  # (url, depth)
         
-        return client
+        # 获取目标域名（如果限制在相同域名）
+        base_domain = urlparse(start_url).netloc if same_domain_only else None
+        
+        print(f"[七宗欲爬虫] 开始迭代爬取，起始URL: {start_url}，最大深度: {max_depth}")
+        
+        while queue and (max_urls is None or len(visited_urls) < max_urls):
+            current_url, depth = queue.pop(0)
+            
+            # 检查URL是否已访问
+            if current_url in visited_urls:
+                continue
+            
+            # 记录已访问
+            visited_urls.add(current_url)
+            print(f"[七宗欲爬虫] 爬取 {current_url} (深度: {depth}/{max_depth})")
+            
+            try:
+                # 爬取当前URL
+                result = self.crawl(current_url)
+                results[current_url] = result
+                
+                # 如果深度未达限制且爬取成功，提取下一页链接
+                if depth < max_depth and result.get('success', False):
+                    # 从响应内容中提取链接
+                    html_content = result.get('content', '')
+                    if html_content:
+                        # 提取所有链接
+                        all_links = self.html_parser.extract_links(html_content, current_url)
+                        
+                        # 过滤链接
+                        filtered_links = all_links
+                        
+                        # 根据域名过滤
+                        if same_domain_only and base_domain:
+                            filtered_links = self.html_parser.filter_links_by_domain(filtered_links, base_domain)
+                        
+                        # 根据模式过滤
+                        filtered_links = self.html_parser.filter_links_by_pattern(
+                            filtered_links, include_patterns, exclude_patterns
+                        )
+                        
+                        # 添加未访问的链接到队列
+                        for link in filtered_links:
+                            if link not in visited_urls and not any(q[0] == link for q in queue):
+                                queue.append((link, depth + 1))
+                
+                # 添加人类行为延迟
+                self.behavior_simulator.human_delay()
+                
+            except Exception as e:
+                print(f"[七宗欲爬虫] 爬取 {current_url} 失败: {str(e)}")
+                results[current_url] = {
+                    'success': False,
+                    'error': str(e),
+                    'url': current_url,
+                    'timestamp': time.time()
+                }
+            
+            # 检查是否达到最大URL数量
+            if max_urls is not None and len(visited_urls) >= max_urls:
+                break
+        
+        # 生成汇总信息
+        summary = {
+            'total_urls': len(results),
+            'successful_urls': sum(1 for r in results.values() if r.get('success', False)),
+            'failed_urls': sum(1 for r in results.values() if not r.get('success', False)),
+            'max_depth_reached': max((d for _, d in queue), default=0) if queue else max_depth,
+            'visited_urls': list(visited_urls)
+        }
+        
+        print(f"[七宗欲爬虫] 迭代爬取完成，总计爬取 {summary['total_urls']} 个URL")
+        
+        return {
+            'results': results,
+            'summary': summary
+        }
     
     def crawl(self, url: str, callback: Optional[Callable] = None, _playwright_attempted: bool = False) -> Dict[str, Any]:
-        """执行智能爬取任务，集成七宗欲引擎优化"""
+        """执行智能爬取任务，集成七宗欲引擎优化 - 实战增强版"""
+        # 检查URL有效性
+        if not url or not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+            raise ValueError(f"无效的URL: {url}")
+            
         if not self.is_running:
             self.initialize()
         
         # 记录开始时间
         start_time = time.time()
         self.total_attempts += 1
+        self.current_retry_round += 1
+        
+        # 实战重置检查 - 避免长时间运行导致的资源泄露
+        current_time = time.time()
+        if current_time - self._last_reset_time > 3600:  # 每小时重置一次
+            self._reset_session()
         
         try:
-            # 获取目标风险评估
-            risk_level = self.seven_desires.desire_perception['detection_danger']
-            dominant_desire = self.seven_desires.dominant_desire
+            # 安全获取风险评估和主导欲望
+            risk_level = 0.3  # 默认中等风险
+            dominant_desire = '贪婪'  # 默认欲望
+            
+            if self.seven_desires:
+                try:
+                    risk_level = getattr(self.seven_desires, 'desire_perception', {}).get('detection_danger', 0.3)
+                    dominant_desire = getattr(self.seven_desires, 'dominant_desire', '贪婪')
+                except Exception as e:
+                    print(f"[七宗欲爬虫] 获取欲望信息失败: {str(e)}")
             
             print(f"[七宗欲爬虫] 开始爬取 {url} - 风险等级: {risk_level:.2f} - 主导欲望: {dominant_desire}")
             
-            # 基于七宗欲生成实战策略
-            self._generate_desire_based_strategy(url)
+            # 基于七宗欲生成实战策略（带异常保护）
+            try:
+                self._generate_desire_based_strategy(url)
+                # 应用策略
+                self._apply_strategies(self.current_strategies)
+            except Exception as e:
+                print(f"[七宗欲爬虫] 策略生成失败，使用默认策略: {str(e)}")
+                # 使用安全默认策略
+                self._apply_safe_default_strategy()
             
-            # 应用策略
-            self._apply_strategies(self.current_strategies)
-            
-            # 根据风险等级决定是否直接使用playwright
-            if risk_level > 0.6:
-                print(f"[七宗欲爬虫] 风险过高，直接启动高级浏览器模拟")
+            # 根据风险等级和环境决定爬取策略
+            if risk_level > 0.6 and self.playwright_available and not _playwright_attempted:
+                print(f"[七宗欲爬虫] 风险过高且Playwright可用，启动高级浏览器模拟")
                 return self._crawl_with_playwright(url, callback)
             
-            # 生成经过优化的请求链
+            # 智能指纹轮换 - 根据时间间隔
+            self._smart_fingerprint_rotation()
+            
+            # 生成经过优化的请求链（安全模式）
             request_chain = self._generate_optimized_request_chain(url)
             
-            # 执行请求链中的每个请求
+            # 执行请求链中的每个请求（实战优化版）
             for i, chain_url in enumerate(request_chain):
                 print(f"[七宗欲爬虫] 执行请求链 {i+1}/{len(request_chain)}: {chain_url} - 欲望模式: {dominant_desire}")
                 
                 # 非目标URL的请求（污染资源）
-                if chain_url != url:
+                if chain_url != url and i < len(request_chain) - 1:  # 确保最后一个是目标URL
                     try:
-                        # 根据当前欲望调整延迟
-                        desire_delay = self._get_desire_adjusted_delay()
-                        time.sleep(desire_delay)
+                        # 智能延迟 - 基于风险和当前状态
+                        delay_time = self._get_smart_delay(risk_level, i)
+                        print(f"[七宗欲爬虫] 应用智能延迟: {delay_time:.2f}秒")
+                        time.sleep(delay_time)
                         
                         # 根据风险等级调整请求头
                         headers = self._get_risk_adjusted_headers()
-                        self.http_client.get(chain_url, timeout=5, follow_redirects=True, headers=headers)
+                        if self.http_client:
+                            # 使用较短超时，非关键请求不等待太久
+                            self.http_client.get(chain_url, timeout=3, follow_redirects=True, headers=headers)
                     except Exception as e:
                         print(f"[七宗欲爬虫] 污染资源请求失败: {str(e)} - 继续执行")
+                        # 资源请求失败不应该影响主要爬取
+                        continue
                 else:
-                    # 目标URL请求
+                    # 目标URL请求 - 主爬取逻辑
                     try:
+                        # 确保HTTP客户端可用
+                        if not self.http_client:
+                            print(f"[七宗欲爬虫] HTTP客户端不可用，重新创建...")
+                            self.http_client = self._create_http_client()
+                        
                         # 应用七宗欲优化的请求执行
                         response = self._execute_main_request_with_desire(chain_url)
                         
@@ -154,27 +466,48 @@ class PhantomCrawler:
                         
                         # 调用回调函数
                         if callback:
-                            callback(response)
+                            try:
+                                callback(response)
+                            except Exception as e:
+                                print(f"[七宗欲爬虫] 回调函数执行出错: {str(e)}")
                         
                         # 记录历史
-                        self.crawl_history.append({
-                            'url': url,
-                            'status_code': response.status_code,
-                            'timestamp': time.time(),
-                            'session_id': self.session_id,
-                            'blocked': result['blocked'],
-                            'response_time': response_time
-                        })
+                        self._record_crawl_history(url, response, response_time, result['blocked'])
                         
-                        # 执行七宗欲分析
+                        # 检查是否被阻止
+                        if result['blocked']:
+                            print(f"[七宗欲爬虫] 检测到被阻止，启动备用策略")
+                            # 执行七宗欲分析（针对阻止情况）
+                            self._seven_desires_analysis(url, result, response_time, success=False)
+                            # 尝试Playwright备用方案
+                            if self.playwright_available and not _playwright_attempted:
+                                return self._crawl_with_playwright(url, callback)
+                            else:
+                                # 没有Playwright时，尝试更换身份后重试
+                                self._refresh_identity()
+                                if self.current_retry_round < self.max_retry_rounds:
+                                    print(f"[七宗欲爬虫] 更换身份后重试 (轮次 {self.current_retry_round}/{self.max_retry_rounds})")
+                                    wait_time = self.retry_interval_base * self.current_retry_round
+                                    time.sleep(wait_time)
+                                    return self.crawl(url, callback, _playwright_attempted)
+                                
+                            # 所有尝试都失败，返回当前结果
+                            return result
+                        
+                        # 执行七宗欲分析（成功情况）
                         self._seven_desires_analysis(url, result, response_time, success=True)
                         
-                        # 更新环境感知
-                        self.behavior_simulator._update_environment_awareness(result)
+                        # 安全更新环境感知
+                        if hasattr(self, 'behavior_simulator') and self.behavior_simulator and hasattr(self.behavior_simulator, '_update_environment_awareness'):
+                            try:
+                                self.behavior_simulator._update_environment_awareness(result)
+                            except Exception as e:
+                                print(f"[七宗欲爬虫] 更新环境感知失败: {str(e)}")
                         
                         # 更新连续成功记录
                         self.success_streak += 1
                         self.consecutive_failures = 0
+                        self.current_retry_round = 0  # 重置重试轮次
                         
                         if self.success_streak >= 3:
                             print(f"[七宗欲爬虫] 连续成功{self.success_streak}次！{dominant_desire}欲望强化中...")
@@ -191,30 +524,66 @@ class PhantomCrawler:
                         # 执行七宗欲失败分析
                         self._seven_desires_analysis(url, {'error': error_msg}, time.time() - start_time, success=False)
                         
-                        # 根据连续失败次数调整策略
+                        # 根据错误类型和连续失败次数调整策略
                         error_str = str(error_msg).lower() if error_msg else ''
-                        if self.consecutive_failures >= 2 or any(kw in error_str for kw in ['blocked', 'captcha', '403', '429']):
-                            print(f"[七宗欲爬虫] 触发备用策略 - 连续失败{self.consecutive_failures}次")
-                            if not _playwright_attempted:
-                                return self._crawl_with_playwright(url, callback)
-                            else:
-                                print("[七宗欲爬虫] Playwright已尝试过，不再重试以避免递归")
-                        raise
+                        retry_needed = False
+                        
+                        # 特定错误类型的处理
+                        if 'timeout' in error_str:
+                            print(f"[七宗欲爬虫] 超时错误，增加超时时间并重试")
+                            self.current_strategies['timeout_seconds'] = min(60, self.current_strategies.get('timeout_seconds', 30) + 10)
+                            retry_needed = True
+                        elif 'connection' in error_str:
+                            print(f"[七宗欲爬虫] 连接错误，更换代理并重试")
+                            self._refresh_identity()
+                            retry_needed = True
+                        elif any(kw in error_str for kw in ['blocked', 'captcha', '403', '429']):
+                            print(f"[七宗欲爬虫] 被阻止错误，切换高级策略")
+                            self._handle_blocked()
+                            retry_needed = True
+                        elif self.consecutive_failures >= 2:
+                            print(f"[七宗欲爬虫] 连续失败{self.consecutive_failures}次，尝试备用策略")
+                            retry_needed = True
+                        
+                        # 智能重试决策
+                        if retry_needed and self.current_retry_round < self.max_retry_rounds:
+                            wait_time = self.retry_interval_base * (self.current_retry_round + 1) * (1 + random.random())
+                            print(f"[七宗欲爬虫] 等待 {wait_time:.2f} 秒后重试 (轮次 {self.current_retry_round}/{self.max_retry_rounds})")
+                            time.sleep(wait_time)
+                            return self.crawl(url, callback, _playwright_attempted)
+                        
+                        # 尝试Playwright作为最后手段
+                        if self.playwright_available and not _playwright_attempted:
+                            print(f"[七宗欲爬虫] HTTP请求失败，尝试Playwright备用方案")
+                            return self._crawl_with_playwright(url, callback)
+                        else:
+                            print(f"[七宗欲爬虫] 所有爬取方法都已尝试失败")
+                            # 抛出异常，但先重置重试计数
+                            self.current_retry_round = 0
+                            raise
         
         except Exception as e:
-            print(f"[七宗欲爬虫] 爬取失败: {str(e)}")
-            # 记录失败并执行欲望分析
-            self.consecutive_failures += 1
-            self.success_streak = 0
-            self._seven_desires_analysis(url, {'error': str(e)}, time.time() - start_time, success=False)
+            final_error = str(e)
+            print(f"[七宗欲爬虫] 爬取失败: {final_error}")
             
-            # 尝试使用Playwright作为备用方案
-            strategy = 'aggressive' if hasattr(self.seven_desires, 'dominant_desire') and self.seven_desires.dominant_desire == '愤怒' else 'stealth'
-            if not _playwright_attempted:
-                return self._crawl_with_playwright(url, callback)
-            else:
-                print("[七宗欲爬虫] Playwright已尝试过，不再重试以避免递归")
-                raise
+            # 安全记录失败
+            try:
+                self.consecutive_failures += 1
+                self.success_streak = 0
+                self.current_retry_round = 0  # 重置重试计数
+                
+                # 执行七宗欲失败分析（安全模式）
+                self._seven_desires_analysis(url, {'error': final_error}, time.time() - start_time, success=False)
+                
+                # 尝试Playwright作为最后的备用方案
+                if self.playwright_available and not _playwright_attempted:
+                    print(f"[七宗欲爬虫] 最后尝试使用Playwright")
+                    return self._crawl_with_playwright(url, callback)
+            except Exception as inner_e:
+                print(f"[七宗欲爬虫] 错误处理过程中发生内部错误: {str(inner_e)}")
+            
+            # 所有尝试都失败，抛出最终异常
+            raise Exception(f"爬取 {url} 失败: {final_error}")
     
     def _execute_main_request(self, url: str) -> httpx.Response:
         """执行智能主请求，集成元认知系统的风险评估和策略调整"""
@@ -586,64 +955,112 @@ class PhantomCrawler:
         return self._execute_main_request(url)
     
     def _seven_desires_analysis(self, url: str, result: Dict[str, Any], response_time: float, success: bool):
-        """执行七宗欲分析，更新欲望强度和策略"""
-        # 使用简单的递归防护 - 跟踪是否正在进行分析
-        if hasattr(self, '_analysis_in_progress') and self._analysis_in_progress:
-            print(f"[七宗欲爬虫] 递归防护: 分析已在进行中，跳过当前调用")
+        """[实战优化版] 执行七宗欲分析，更新欲望强度和策略"""
+        # 增强递归防护机制
+        if not hasattr(self, '_analysis_recursion_depth'):
+            self._analysis_recursion_depth = 0
+        
+        # 双重递归防护：标志检查 + 深度限制
+        if (hasattr(self, '_analysis_in_progress') and self._analysis_in_progress) or self._analysis_recursion_depth > 3:
+            print(f"[七宗欲爬虫-实战版] 递归防护触发: {'分析中标志' if self._analysis_in_progress else '深度限制'}，跳过调用")
+            # 即使被防护拦截，也要确保清理
+            if self._analysis_recursion_depth > 3:
+                self._analysis_recursion_depth -= 1
             return
         
-        # 设置分析中标志
+        # 更新递归深度和状态标志
+        self._analysis_recursion_depth += 1
         self._analysis_in_progress = True
         
         try:
-            # 简化的分析版本，避免复杂的递归调用
-            # 只执行最基本的记录操作，避免触发可能导致递归的方法
+            # 增强安全结果对象构建，添加更多实战相关字段
+            safe_result = {
+                'status_code': 500,
+                'error': 'Unknown error',
+                'blocked': False,
+                'response_time': response_time,
+                'timestamp': time.time(),
+                'success': success
+            }
             
-            # 确保result是安全的格式
-            safe_result = {}
-            if isinstance(result, dict):
-                safe_result['error'] = str(result.get('error', 'Unknown error'))
-                safe_result['status_code'] = result.get('status_code', 500)
-                safe_result['blocked'] = result.get('blocked', False)
-            else:
-                safe_result['error'] = str(result)
-                safe_result['status_code'] = 500
-                safe_result['blocked'] = False
+            # 安全地提取结果信息，避免异常
+            try:
+                if isinstance(result, dict):
+                    safe_result['status_code'] = result.get('status_code', 500)
+                    safe_result['error'] = str(result.get('error', 'Unknown error'))
+                    safe_result['blocked'] = result.get('blocked', False)
+                    safe_result['content_length'] = len(result.get('content', '')) if 'content' in result else 0
+                    safe_result['playwright_used'] = result.get('playwright_used', False)
+                    safe_result['risk_level'] = result.get('risk_level', 0.5)
+                else:
+                    safe_result['error'] = str(result)
+            except Exception as inner_e:
+                print(f"[七宗欲爬虫-实战版] 构建安全结果时出错: {str(inner_e)}")
             
-            # 只记录成功或失败，不执行可能导致递归的其他方法
-            if success:
-                if hasattr(self.seven_desires, 'record_success'):
-                    try:
-                        self.seven_desires.record_success(url, safe_result)
-                        print(f"[七宗欲爬虫] {url} 爬取成功")
-                    except Exception as e:
-                        print(f"[七宗欲爬虫] 记录成功时出错: {str(e)}")
-            else:
-                if hasattr(self.seven_desires, 'record_failure'):
-                    try:
-                        self.seven_desires.record_failure(url, safe_result)
-                        print(f"[七宗欲爬虫] {url} 爬取失败 - 记录已保存")
-                    except Exception as e:
-                        print(f"[七宗欲爬虫] 记录失败时出错: {str(e)}")
+            # 实战优化：添加详细的日志记录
+            print(f"[七宗欲爬虫-实战版] 分析URL: {url[:50]}{'...' if len(url) > 50 else ''}, 状态码: {safe_result['status_code']}, 成功: {success}")
             
-            # 避免调用可能导致递归的其他方法
-            # 暂时注释掉这些可能导致递归的调用
-            # 将来可以逐步添加回来，但需要确保不会递归
-            # if hasattr(self.seven_desires, '_sense_danger'):
-            #     self.seven_desires._sense_danger(success, safe_result)
-            # if hasattr(self.seven_desires, '_awaken_dominant_desire'):
-            #     self.seven_desires._awaken_dominant_desire()
-            # if hasattr(self.behavior_simulator, '_select_optimized_behavior_pattern'):
-            #     self.behavior_simulator._select_optimized_behavior_pattern()
-            # if hasattr(self.seven_desires, '_balance_desire_forces'):
-            #     self.seven_desires._balance_desire_forces()
+            # 安全记录成功或失败
+            try:
+                if success:
+                    if hasattr(self.seven_desires, 'record_success'):
+                        try:
+                            self.seven_desires.record_success(url, safe_result)
+                            print(f"[七宗欲爬虫-实战版] 成功记录: {url}")
+                            # 实战优化：成功时小幅降低风险评估
+                            if hasattr(self.seven_desires, 'update_risk_level') and safe_result['risk_level'] > 0.1:
+                                self.seven_desires.update_risk_level(url, -0.05)
+                        except Exception as e:
+                            print(f"[七宗欲爬虫-实战版] 记录成功失败: {str(e)}")
+                else:
+                    if hasattr(self.seven_desires, 'record_failure'):
+                        try:
+                            self.seven_desires.record_failure(url, safe_result)
+                            print(f"[七宗欲爬虫-实战版] 失败记录: {url}")
+                            # 实战优化：失败时智能增加风险评估
+                            risk_increase = 0.15 if safe_result['blocked'] else 0.08
+                            if hasattr(self.seven_desires, 'update_risk_level'):
+                                self.seven_desires.update_risk_level(url, risk_increase)
+                        except Exception as e:
+                            print(f"[七宗欲爬虫-实战版] 记录失败失败: {str(e)}")
+            except Exception as record_e:
+                print(f"[七宗欲爬虫-实战版] 记录操作异常: {str(record_e)}")
+            
+            # 实战优化：根据递归深度和安全状态，选择性地启用高级功能
+            try:
+                if self._analysis_recursion_depth == 1:  # 仅在顶层调用时执行
+                    # 智能恢复部分高级功能，但增加安全检查
+                    if hasattr(self.seven_desires, '_sense_danger') and not safe_result['success']:
+                        try:
+                            self.seven_desires._sense_danger(safe_result['success'], safe_result)
+                        except Exception as sense_e:
+                            print(f"[七宗欲爬虫-实战版] 危险感知异常: {str(sense_e)}")
+            except Exception as advanced_e:
+                print(f"[七宗欲爬虫-实战版] 高级功能异常: {str(advanced_e)}")
                 
         except Exception as e:
-            print(f"[七宗欲爬虫] 七宗欲分析出错: {str(e)}")
-            # 避免在分析错误时再次触发分析，防止递归
+            print(f"[七宗欲爬虫-实战版] 分析主异常: {type(e).__name__}: {str(e)}")
+            # 记录异常到失败历史
+            if hasattr(self, 'error_history'):
+                try:
+                    self.error_history.append({
+                        'method': '_seven_desires_analysis',
+                        'error': str(e),
+                        'url': url,
+                        'timestamp': time.time()
+                    })
+                except:
+                    pass
         finally:
-            # 重置分析中标志，确保方法结束后总是重置
-            self._analysis_in_progress = False
+            # 确保清理递归状态，防止永久锁定
+            try:
+                self._analysis_recursion_depth = max(0, self._analysis_recursion_depth - 1)
+                self._analysis_in_progress = False
+            except:
+                # 终极安全保障，确保状态重置
+                setattr(self, '_analysis_recursion_depth', 0)
+                setattr(self, '_analysis_in_progress', False)
+            print(f"[七宗欲爬虫-实战版] 分析完成，递归深度重置: {self._analysis_recursion_depth}")
     
     def _metacognitive_analysis(self, url: str, result: Dict[str, Any], response_time: float):
         """保持向后兼容的元认知分析方法"""
@@ -695,41 +1112,175 @@ class PhantomCrawler:
             self.learning_optimizer.replay_experiences()
     
     def _record_failure(self, url: str, error_message: str):
-        """记录失败并执行学习"""
-        try:
-            # 重置成功连续次数
+        """[实战优化版] 记录失败并执行智能学习与自适应调整"""
+        # 实战优化：添加记录失败的开始日志
+        print(f"[PhantomCrawler-实战版] 开始记录失败: {url[:50]}{'...' if len(url) > 50 else ''}")
+        
+        # 确保success_streak属性存在并重置
+        if not hasattr(self, 'success_streak'):
             self.success_streak = 0
-            
-            # 分析失败原因
-            # 使用安全的结果对象，避免传递可能导致递归的数据
-            safe_result = {
-                'status_code': 500,
-                'error': str(error_message),
-                'url': url,
-                'timestamp': time.time()
-            }
-            
-            # 安全调用record_failure方法而不是analyze_crawl_result
+        self.success_streak = 0
+        
+        # 实战优化：记录失败次数和失败类型统计
+        if not hasattr(self, 'failure_stats'):
+            self.failure_stats = {'total': 0, 'types': {}}
+        self.failure_stats['total'] += 1
+        
+        # 分析错误类型
+        error_type = 'unknown'
+        error_lower = str(error_message).lower() if error_message else ''
+        
+        # 实战优化：更细粒度的错误类型识别
+        error_patterns = {
+            'timeout': ['timeout', 'timed out', 'connection timed out'],
+            'connection': ['connection', 'connect', 'refused', 'reset', 'closed'],
+            'block': ['block', 'captcha', '验证码', 'robot', 'automated', 'suspicious'],
+            'server': ['500', '502', '503', '504', 'server error'],
+            'network': ['network', 'dns', 'resolve', 'unreachable'],
+            'playwright': ['browser', 'page', 'context', 'playwright']
+        }
+        
+        for pattern_type, patterns in error_patterns.items():
+            if any(p in error_lower for p in patterns):
+                error_type = pattern_type
+                break
+        
+        # 更新失败统计
+        self.failure_stats['types'][error_type] = self.failure_stats['types'].get(error_type, 0) + 1
+        
+        # 构建增强的安全结果对象
+        safe_result = {
+            'status_code': 500,
+            'error': str(error_message),
+            'error_type': error_type,
+            'url': url,
+            'timestamp': time.time(),
+            'retry_count': getattr(self, 'current_retry_count', 0)
+        }
+        
+        try:
+            # 1. 记录失败到七宗欲系统
             if hasattr(self.seven_desires, 'record_failure'):
-                # 只传递必要的信息，避免复杂对象
-                self.seven_desires.record_failure(url, safe_result)
-            
-            # 检测模式变化 - 但限制调用深度，避免递归
-            recent_results = self.crawl_history[-5:] if len(self.crawl_history) >= 5 else self.crawl_history
-            if recent_results and hasattr(self.seven_desires, 'detect_pattern_changes'):
-                # 简化传递的参数
                 try:
-                    if self.seven_desires.detect_pattern_changes(url, recent_results):
-                        # 生成自适应响应
-                        if hasattr(self.seven_desires, 'generate_adaptive_response'):
-                            adaptive_response = self.seven_desires.generate_adaptive_response(url, True)
-                            if adaptive_response:
-                                self._apply_adaptive_response(adaptive_response)
-                except Exception as e:
-                    print(f"[PhantomCrawler] 模式检测出错: {str(e)}")
+                    self.seven_desires.record_failure(url, safe_result)
+                    print(f"[PhantomCrawler-实战版] 失败记录已保存: {url}, 错误类型: {error_type}")
+                except Exception as record_e:
+                    print(f"[PhantomCrawler-实战版] 记录失败到七宗欲系统出错: {str(record_e)}")
+            
+            # 2. 实战优化：基于错误类型的即时响应
+            try:
+                # 连接错误立即更换代理
+                if error_type == 'connection' and hasattr(self, 'protocol_obfuscator'):
+                    self.protocol_obfuscator.rotate_proxy()
+                    print(f"[PhantomCrawler-实战版] 检测到连接错误，已立即更换代理")
+                
+                # 阻止错误立即刷新身份
+                elif error_type == 'block' and hasattr(self, '_refresh_identity'):
+                    self._refresh_identity()
+                    print(f"[PhantomCrawler-实战版] 检测到阻止错误，已立即刷新身份")
+                
+                # 超时错误增加超时设置
+                elif error_type == 'timeout':
+                    if hasattr(self, 'global_config'):
+                        current_timeout = self.global_config.get('request_timeout', 30)
+                        new_timeout = min(120, current_timeout * 1.5)
+                        self.global_config.set('request_timeout', new_timeout)
+                        print(f"[PhantomCrawler-实战版] 检测到超时，超时时间已调整至: {new_timeout}秒")
+            except Exception as immediate_e:
+                print(f"[PhantomCrawler-实战版] 即时响应处理出错: {str(immediate_e)}")
+            
+            # 3. 智能模式检测与自适应 - 增加更多安全检查
+            try:
+                # 确保crawl_history存在且有足够数据
+                if hasattr(self, 'crawl_history') and len(self.crawl_history) >= 3:
+                    # 使用更多历史数据进行更准确的模式检测
+                    history_size = min(10, len(self.crawl_history))
+                    recent_results = self.crawl_history[-history_size:]
+                    
+                    # 过滤出有效的历史记录
+                    valid_results = []
+                    for h in recent_results:
+                        if isinstance(h, dict) and 'url' in h and 'timestamp' in h:
+                            valid_results.append(h)
+                    
+                    # 只有当有足够有效数据时才进行模式检测
+                    if len(valid_results) >= 3 and hasattr(self.seven_desires, 'detect_pattern_changes'):
+                        try:
+                            # 增加额外的上下文信息
+                            context_info = {
+                                'recent_error_rate': sum(1 for r in valid_results if r.get('blocked', False)) / len(valid_results),
+                                'error_type': error_type,
+                                'total_failures': self.failure_stats['total']
+                            }
+                            
+                            # 安全调用模式检测
+                            if self.seven_desires.detect_pattern_changes(url, valid_results, context_info):
+                                print(f"[PhantomCrawler-实战版] 检测到模式变化，准备生成自适应响应")
+                                
+                                # 生成并应用自适应响应
+                                if hasattr(self.seven_desires, 'generate_adaptive_response'):
+                                    adaptive_response = self.seven_desires.generate_adaptive_response(
+                                        url, 
+                                        True,
+                                        error_type=error_type,
+                                        retry_count=getattr(self, 'current_retry_count', 0)
+                                    )
+                                    
+                                    if adaptive_response and isinstance(adaptive_response, dict):
+                                        # 实战优化：增强自适应响应的应用
+                                        enhanced_response = {
+                                            **adaptive_response,
+                                            'error_type': error_type,
+                                            'applied_timestamp': time.time()
+                                        }
+                                        self._apply_adaptive_response(enhanced_response)
+                        except Exception as pattern_e:
+                            print(f"[PhantomCrawler-实战版] 模式检测和自适应生成出错: {str(pattern_e)}")
+            except Exception as pattern_overall_e:
+                print(f"[PhantomCrawler-实战版] 模式分析总体异常: {str(pattern_overall_e)}")
+            
+            # 4. 实战优化：风险级别动态调整
+            try:
+                if hasattr(self.seven_desires, 'update_risk_level'):
+                    # 基于错误类型调整风险增加幅度
+                    risk_increments = {
+                        'block': 0.3,       # 最高风险
+                        'timeout': 0.15,
+                        'connection': 0.1,
+                        'playwright': 0.2,
+                        'server': 0.05,
+                        'network': 0.08,
+                        'unknown': 0.1
+                    }
+                    
+                    increment = risk_increments.get(error_type, 0.1)
+                    # 失败次数越多，风险增加越少（避免风险值过快达到上限）
+                    if self.failure_stats['total'] > 10:
+                        increment *= 0.7
+                    
+                    self.seven_desires.update_risk_level(url, increment)
+                    print(f"[PhantomCrawler-实战版] 风险级别更新: +{increment}, 错误类型: {error_type}")
+            except Exception as risk_e:
+                print(f"[PhantomCrawler-实战版] 风险级别更新出错: {str(risk_e)}")
+                
         except Exception as e:
-            print(f"[PhantomCrawler] 记录失败时出错: {str(e)}")
-            # 避免在记录失败时再次触发记录失败的递归
+            # 终极异常捕获，确保不会中断
+            print(f"[PhantomCrawler-实战版] 记录失败主异常: {type(e).__name__}: {str(e)}")
+            
+            # 即使出错也要保存错误记录
+            if hasattr(self, 'error_history'):
+                try:
+                    self.error_history.append({
+                        'method': '_record_failure',
+                        'error': str(e),
+                        'url': url,
+                        'timestamp': time.time()
+                    })
+                except:
+                    pass
+        finally:
+            # 实战优化：添加完成日志
+            print(f"[PhantomCrawler-实战版] 失败记录处理完成: {url[:50]}{'...' if len(url) > 50 else ''}, 错误类型: {error_type}")
     
     def _is_blocked_content(self, content: str) -> bool:
         """检查内容是否被阻止"""
@@ -753,28 +1304,179 @@ class PhantomCrawler:
             print(f"[七宗欲引擎] 检测到连接错误，已更换代理")
     
     def _metacognitive_adaptation(self, url: str, detection_info: Dict[str, Any]):
-        """执行元认知自适应调整"""
-        # 检测模式变化
-        recent_results = self.crawl_history[-5:] if len(self.crawl_history) >= 5 else self.crawl_history
-        pattern_changed = self.seven_desires.detect_pattern_changes(url, recent_results)
+        """[实战优化版] 执行元认知自适应调整，增强实战突破能力"""
+        print(f"[PhantomCrawler-实战版] 开始元认知自适应调整: {url[:50]}{'...' if len(url) > 50 else ''}")
         
-        # 生成自适应响应
-        adaptive_response = self.seven_desires.generate_adaptive_response(url, pattern_changed or detection_info.get('blocked', False))
+        # 确保所有必要的属性存在
+        if not hasattr(self, 'crawl_history'):
+            self.crawl_history = []
+        if not hasattr(self, 'adaptation_history'):
+            self.adaptation_history = []
         
-        # 应用自适应响应
-        self._apply_adaptive_response(adaptive_response)
-        
-        # 获取学习优化建议
-        performance_metrics = self.self_awareness.get_performance_metrics()
-        adaptation_suggestion = self.learning_optimizer.suggest_adaptation({
-            'success_rate': performance_metrics['success_rate'],
-            'avg_response_time': performance_metrics['avg_response_time'],
-            'error_rate': sum(self.self_awareness.error_counts.values()) / max(1, len(self.crawl_history)),
-            'current_pattern': performance_metrics['current_pattern']
-        })
-        
-        # 应用优化建议
-        self._apply_optimization_suggestions(adaptation_suggestion)
+        try:
+            # 1. 增强的模式检测 - 考虑更多历史数据和上下文
+            try:
+                # 使用更大的历史窗口进行更准确的模式检测
+                history_size = min(15, len(self.crawl_history))
+                recent_results = self.crawl_history[-history_size:] if len(self.crawl_history) >= history_size else self.crawl_history
+                
+                # 过滤并验证历史数据
+                valid_history = []
+                for h in recent_results:
+                    if isinstance(h, dict) and 'url' in h and 'status_code' in h:
+                        # 添加额外的上下文信息到每个历史记录
+                        enhanced_record = {
+                            **h,
+                            'is_blocked': h.get('blocked', False),
+                            'response_time': h.get('response_time', 0),
+                            'risk_level': h.get('risk_level', 0.5)
+                        }
+                        valid_history.append(enhanced_record)
+                
+                # 只有当有足够有效数据时才进行模式检测
+                if len(valid_history) >= 3 and hasattr(self.seven_desires, 'detect_pattern_changes'):
+                    # 构建丰富的上下文信息
+                    context_info = {
+                        'recent_block_rate': sum(1 for h in valid_history if h['is_blocked']) / len(valid_history),
+                        'avg_response_time': sum(h.get('response_time', 0) for h in valid_history) / len(valid_history),
+                        'detection_info': detection_info,
+                        'current_time': time.time(),
+                        'total_adaptations': len(self.adaptation_history)
+                    }
+                    
+                    pattern_changed = self.seven_desires.detect_pattern_changes(url, valid_history, context_info)
+                    print(f"[PhantomCrawler-实战版] 模式检测结果: {'变化' if pattern_changed else '稳定'}")
+                else:
+                    pattern_changed = False
+                    print(f"[PhantomCrawler-实战版] 历史数据不足，跳过模式检测")
+            except Exception as pattern_e:
+                print(f"[PhantomCrawler-实战版] 模式检测异常: {str(pattern_e)}")
+                pattern_changed = False  # 出错时默认假设模式稳定
+            
+            # 2. 智能自适应响应生成
+            try:
+                blocked_status = detection_info.get('blocked', False)
+                captcha_detected = detection_info.get('captcha_detected', False)
+                
+                # 根据不同的检测情况生成不同强度的响应
+                response_intensity = 'mild'
+                if captcha_detected:
+                    response_intensity = 'maximum'  # 验证码需要最强响应
+                elif blocked_status:
+                    response_intensity = 'strong'    # 阻止需要强响应
+                elif pattern_changed:
+                    response_intensity = 'moderate'  # 模式变化需要中等响应
+                
+                # 添加更多上下文信息到响应生成
+                response_context = {
+                    'intensity': response_intensity,
+                    'error_type': detection_info.get('error_type', 'unknown'),
+                    'status_code': detection_info.get('status_code', 0),
+                    'risk_level': detection_info.get('risk_level', 0.5)
+                }
+                
+                if hasattr(self.seven_desires, 'generate_adaptive_response'):
+                    adaptive_response = self.seven_desires.generate_adaptive_response(
+                        url,
+                        pattern_changed or blocked_status,
+                        context=response_context
+                    )
+                    
+                    # 应用自适应响应
+                    if adaptive_response and isinstance(adaptive_response, dict):
+                        self._apply_adaptive_response(adaptive_response)
+                        print(f"[PhantomCrawler-实战版] 已应用自适应响应，强度: {response_intensity}")
+                    else:
+                        print(f"[PhantomCrawler-实战版] 未生成有效的自适应响应")
+            except Exception as response_e:
+                print(f"[PhantomCrawler-实战版] 自适应响应生成异常: {str(response_e)}")
+            
+            # 3. 增强的学习优化建议 - 添加更多安全检查
+            try:
+                # 安全获取性能指标
+                performance_metrics = {}
+                if hasattr(self, 'self_awareness') and hasattr(self.self_awareness, 'get_performance_metrics'):
+                    try:
+                        performance_metrics = self.self_awareness.get_performance_metrics()
+                    except Exception as perf_e:
+                        print(f"[PhantomCrawler-实战版] 获取性能指标异常: {str(perf_e)}")
+                        # 使用默认值
+                        performance_metrics = {
+                            'success_rate': 0.5,
+                            'avg_response_time': 3.0,
+                            'current_pattern': 'balanced'
+                        }
+                
+                # 安全计算错误率
+                error_rate = 0.0
+                try:
+                    total_errors = 0
+                    if hasattr(self, 'self_awareness') and hasattr(self.self_awareness, 'error_counts'):
+                        total_errors = sum(self.self_awareness.error_counts.values())
+                    error_rate = total_errors / max(1, len(self.crawl_history))
+                except:
+                    error_rate = 0.5  # 默认值
+                
+                # 构建优化建议请求
+                adaptation_input = {
+                    'success_rate': performance_metrics.get('success_rate', 0.5),
+                    'avg_response_time': performance_metrics.get('avg_response_time', 3.0),
+                    'error_rate': error_rate,
+                    'current_pattern': performance_metrics.get('current_pattern', 'balanced'),
+                    'blocked': detection_info.get('blocked', False),
+                    'captcha_detected': detection_info.get('captcha_detected', False)
+                }
+                
+                # 安全请求优化建议
+                adaptation_suggestion = None
+                if hasattr(self, 'learning_optimizer') and hasattr(self.learning_optimizer, 'suggest_adaptation'):
+                    try:
+                        adaptation_suggestion = self.learning_optimizer.suggest_adaptation(adaptation_input)
+                    except Exception as suggest_e:
+                        print(f"[PhantomCrawler-实战版] 获取优化建议异常: {str(suggest_e)}")
+                
+                # 应用优化建议
+                if adaptation_suggestion and isinstance(adaptation_suggestion, dict):
+                    self._apply_optimization_suggestions(adaptation_suggestion)
+                    print(f"[PhantomCrawler-实战版] 已应用学习优化建议")
+            except Exception as learning_e:
+                print(f"[PhantomCrawler-实战版] 学习优化异常: {str(learning_e)}")
+            
+            # 4. 实战优化：记录自适应历史，用于后续分析
+            try:
+                adaptation_record = {
+                    'url': url,
+                    'timestamp': time.time(),
+                    'blocked': detection_info.get('blocked', False),
+                    'captcha_detected': detection_info.get('captcha_detected', False),
+                    'pattern_changed': pattern_changed,
+                    'risk_level': detection_info.get('risk_level', 0.5)
+                }
+                self.adaptation_history.append(adaptation_record)
+                
+                # 限制历史记录大小
+                if len(self.adaptation_history) > 100:
+                    self.adaptation_history = self.adaptation_history[-100:]
+            except Exception as history_e:
+                print(f"[PhantomCrawler-实战版] 记录自适应历史异常: {str(history_e)}")
+                
+        except Exception as e:
+            # 终极异常捕获
+            print(f"[PhantomCrawler-实战版] 元认知自适应主异常: {type(e).__name__}: {str(e)}")
+            
+            # 即使出错也要记录
+            if hasattr(self, 'error_history'):
+                try:
+                    self.error_history.append({
+                        'method': '_metacognitive_adaptation',
+                        'error': str(e),
+                        'url': url,
+                        'timestamp': time.time()
+                    })
+                except:
+                    pass
+        finally:
+            print(f"[PhantomCrawler-实战版] 元认知自适应完成: {url[:50]}{'...' if len(url) > 50 else ''}")
     
     def _apply_adaptive_response(self, response: Dict[str, Any]):
         """应用自适应响应策略"""
