@@ -31,6 +31,7 @@ class FingerprintSpoofer:
                 'extensions': '0-10-11-13-16-23-28-35-43-45',
                 'curves': '29-23-24-25',
             },
+    
             'firefox': {
                 'ciphers': '4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53',
                 'extensions': '0-10-11-13-16-23-28-35-43-45-51',
@@ -111,6 +112,25 @@ class FingerprintSpoofer:
             client.headers.update(self.session_headers)
         
         return client
+    
+    def reset_fingerprint(self):
+        """重置当前的指纹配置
+        
+        清除现有的会话头部，准备生成新的指纹
+        """
+        self.session_headers = None
+    
+    def refresh_fingerprint(self, browser_type: Optional[str] = None) -> Dict[str, str]:
+        """刷新并生成新的指纹
+        
+        Args:
+            browser_type: 可选的浏览器类型
+            
+        Returns:
+            新生成的指纹头部信息
+        """
+        self.reset_fingerprint()
+        return self.generate_fingerprint(browser_type)
     
     def get_playwright_fingerprint_overrides(self) -> Dict[str, any]:
         """获取Playwright浏览器指纹覆盖配置
@@ -235,6 +255,25 @@ class FingerprintSpoofer:
         
         # 默认返回Chrome UA
         return random.choice(self.user_agent_pool)
+    
+    def reset_fingerprint(self):
+        """重置当前的指纹配置
+        
+        清除现有的会话头部，准备生成新的指纹
+        """
+        self.session_headers = None
+    
+    def refresh_fingerprint(self, browser_type: Optional[str] = None) -> Dict[str, str]:
+        """刷新并生成新的指纹
+        
+        Args:
+            browser_type: 可选的浏览器类型
+            
+        Returns:
+            新生成的指纹头部信息
+        """
+        self.reset_fingerprint()
+        return self.generate_fingerprint(browser_type)
     
     def generate_dynamic_headers(self, url: str, referrer: Optional[str] = None) -> Dict[str, str]:
         """根据URL和referrer动态生成HTTP头部，增强版

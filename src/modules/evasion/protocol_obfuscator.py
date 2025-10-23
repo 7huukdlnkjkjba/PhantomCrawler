@@ -185,6 +185,20 @@ class ProtocolObfuscator:
         if self.proxy_chain:
             random.shuffle(self.proxy_chain)
     
+    def force_proxy_change(self) -> Optional[Dict[str, str]]:
+        """强制更换到下一个代理
+        
+        Returns:
+            新的代理配置，如果没有代理则返回None
+        """
+        return self.get_next_proxy()
+    
+    def rotate_proxy(self) -> None:
+        """旋转代理，强制切换到下一个代理并重新排序代理链"""
+        self.rotate_proxy_chain()
+        if self.proxy_chain:
+            self.current_proxy_index = 0  # 重置到第一个代理
+    
     def test_proxy(self, proxy: Dict[str, str]) -> bool:
         """测试代理是否有效"""
         try:

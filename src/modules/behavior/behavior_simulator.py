@@ -5,7 +5,7 @@ import math
 import psutil
 from typing import Dict, Any, Optional, List
 from src.config import global_config
-from src.modules.intelligence.metacognition_engine import MetacognitionEngine
+from src.modules.intelligence.metacognition_engine import SevenDesiresEngine
 
 
 class BehaviorSimulator:
@@ -50,7 +50,7 @@ class BehaviorSimulator:
         self._load_behavior_patterns()
         
         # 元认知引擎集成
-        self.metacognition = MetacognitionEngine()
+        self.seven_desires = SevenDesiresEngine()
         
         # 资源监控配置
         self.resource_monitor_interval = 10  # 秒
@@ -59,7 +59,7 @@ class BehaviorSimulator:
         self._start_resource_monitor()
         
         # 同步行为模式
-        self.behavior_pattern = self.metacognition.current_behavior_pattern
+        self.behavior_pattern = self.seven_desires.current_behavior_pattern
     
     def human_delay(self, min_delay: Optional[float] = None, max_delay: Optional[float] = None, context: Optional[Dict[str, Any]] = None) -> None:
         """模拟人类操作的时间间隔
@@ -725,7 +725,7 @@ class BehaviorSimulator:
             interaction_counts[interaction] = interaction_counts.get(interaction, 0) + 1
         
         # 获取元认知洞察
-        metacognitive_insights = self.metacognition.get_metacognitive_insights()
+        metacognitive_insights = self.seven_desires.get_metacognitive_insights()
         
         return {
             'mouse_movement_enabled': self.mouse_movement_enabled,
@@ -747,7 +747,7 @@ class BehaviorSimulator:
         """关闭模拟器并清理资源"""
         print("[BehaviorSimulator] 正在关闭行为模拟器...")
         # 确保元认知引擎正确关闭并保存知识
-        self.metacognition.shutdown()
+        self.seven_desires.shutdown()
         print("[BehaviorSimulator] 行为模拟器已关闭")
     
     def _load_behavior_patterns(self):
@@ -810,10 +810,10 @@ class BehaviorSimulator:
         
         # 同步到元认知引擎
         # 更新检测风险
-        self.metacognition.environment_awareness['detection_risk'] = self.environment_awareness['detection_risk']
+        self.seven_desires.environment_awareness['detection_risk'] = self.environment_awareness['detection_risk']
         
         # 更新系统性能指标
-        self.metacognition.environment_awareness['system_performance']['avg_response_time'] = response_time
+        self.seven_desires.environment_awareness['system_performance']['avg_response_time'] = response_time
         
         # 如果有URL，分析爬取结果
         if 'url' in context and 'result' in context:
@@ -821,14 +821,14 @@ class BehaviorSimulator:
             strategies_used = context.get('strategies', {})
             
             # 调用元认知引擎分析结果
-            self.metacognition.analyze_crawl_result(
+            self.seven_desires.analyze_crawl_result(
                 url=context['url'],
                 result=context['result'],
                 strategies_used=strategies_used
             )
         
         # 基于元认知引擎的洞察更新本地状态
-        insights = self.metacognition.get_metacognitive_insights()
+        insights = self.seven_desires.get_metacognitive_insights()
         
         # 更新本地行为模式
         if 'current_behavior_pattern' in insights['system_state']:
@@ -848,7 +848,7 @@ class BehaviorSimulator:
     def _select_optimized_behavior_pattern(self):
         """基于元认知分析选择优化的行为模式"""
         # 使用元认知引擎进行决策
-        insights = self.metacognition.get_metacognitive_insights()
+        insights = self.seven_desires.get_metacognitive_insights()
         new_pattern = insights['system_state']['current_behavior_pattern']
         
         # 模式变更时间限制，避免频繁切换
@@ -885,8 +885,8 @@ class BehaviorSimulator:
     def shift_behavior_pattern(self):
         """切换到不同的行为模式，用于规避检测"""
         # 使用元认知引擎的行为模式切换功能
-        self.metacognition.shift_behavior_pattern()
-        new_pattern = self.metacognition.current_behavior_pattern
+        self.seven_desires.shift_behavior_pattern()
+        new_pattern = self.seven_desires.current_behavior_pattern
         
         # 同步本地模式
         self.behavior_pattern = new_pattern
@@ -911,7 +911,7 @@ class BehaviorSimulator:
                     network_usage = min(net_io.bytes_sent + net_io.bytes_recv, 1024*1024*100) / (1024*1024*100)  # 假设100MB/s为满负荷
                     
                     # 更新元认知引擎的资源压力
-                    self.metacognition.update_resource_usage(
+                    self.seven_desires.update_resource_usage(
                         cpu=min(cpu_percent/100, 1.0),
                         memory=min(memory_percent/100, 1.0),
                         network=min(network_usage, 1.0)
