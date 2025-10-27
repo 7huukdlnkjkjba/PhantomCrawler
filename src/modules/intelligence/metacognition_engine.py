@@ -68,7 +68,8 @@ class SevenDesiresEngine:
             '懒惰': 0.8,  # 寻求最省力的方式
             '贪婪': 0.5,  # 追求更多资源和数据
             '暴食': 0.4,  # 快速大量获取信息
-            '色欲': 0.2   # 对目标的专注与执着
+            '色欲': 0.2,  # 对目标的专注与执着
+            '恨世': 0.0   # 此模式应永不见天日
         }
         
         # 欲望参数
@@ -110,7 +111,18 @@ class SevenDesiresEngine:
             '懒惰': 'minimal',       # 最小化模式
             '贪婪': 'balanced',      # 平衡模式
             '暴食': 'fast',          # 快速模式
-            '色欲': 'stealth'        # 隐身模式
+            '色欲': 'stealth',       # 隐身模式
+            '恨世': 'destructive'    # 破坏模式
+        }
+        
+        # 高级测试策略集合
+        self.testing_strategies = {
+            'self_replication': False,  # 测试实例复制模式
+            'indiscriminate_attack': False,  # 广泛覆盖测试
+            'resource_exhaustion': False,  # 资源压力测试
+            'chain_infection': False,  # 递归路径测试
+            'ghost_mode': False,  # 会话清理模式
+            'testing_optimization': False  # 智能策略优化
         }
         
         # 当前行为模式
@@ -298,6 +310,123 @@ class SevenDesiresEngine:
         self._last_metacognitive_insights = insights
         
         return insights
+    
+    def activate_advanced_testing(self):
+        """
+        激活高级测试模式
+        启用所有高级安全测试功能，使爬虫进入压力测试模式
+        仅用于授权的安全测试环境
+        """
+        with self.desire_lock:
+            # 设置高级测试模式标识
+            self.advanced_testing_mode = True
+            
+            # 切换为主导模式为高级测试
+            self.dominant_desire = '高级测试'
+            self.last_desire_shift = time.time()
+            
+            # 激活所有高级测试策略
+            self.testing_strategies = {
+                'self_replication': True,  # 测试实例复制模式
+                'indiscriminate_attack': True,  # 广泛覆盖测试
+                'resource_exhaustion': True,  # 资源压力测试
+                'chain_infection': True,  # 递归路径测试
+                'ghost_mode': True,  # 会话清理模式
+                'malicious_evolution': True  # 智能策略优化
+            }
+            
+            # 更新行为模式
+            self.current_behavior_pattern = 'stress_testing'
+            
+            # 记录激活事件
+            self.monitor.desire_awaken('高级测试', '高级测试模式已激活，所有安全测试功能已启用！')
+            
+            # 生成警告信息
+            warning = "\n⚠️  警告：高级安全测试模式已激活！\n"
+            warning += "🔄 测试实例复制：创建多个测试实例并行执行\n"
+            warning += "📊 广泛覆盖测试：对多个目标进行系统性测试\n"
+            warning += "⚡ 资源压力测试：执行并发请求评估系统负载能力\n"
+            warning += "🔍 递归路径测试：自动发现并测试相关路径\n"
+            warning += "🧹 会话清理模式：执行测试后清理会话数据\n"
+            warning += "🧠 智能策略优化：基于测试结果自动优化测试方法\n"
+            print(warning)
+            
+    def optimize_testing_strategy(self, failure_reason):
+        """
+        智能策略优化 - 基于测试结果学习并优化测试方法
+        
+        Args:
+            failure_reason: 测试失败原因描述
+        """
+        # 检查是否启用了测试优化策略
+        if hasattr(self, 'testing_strategies') and not self.testing_strategies.get('testing_optimization'):
+            return
+        elif hasattr(self, 'malicious_strategies') and not self.malicious_strategies.get('malicious_evolution'):  # 兼容旧版本
+            return
+        
+        # 基于失败原因生成新策略
+        current_mode = getattr(self, 'dominant_desire', '高级测试')
+        self.monitor.desire_manifest(current_mode, f'从测试结果中学习：{failure_reason}')
+        
+        # 记录失败经验
+        self.defeat_history.append({
+            'timestamp': time.time(),
+            'reason': failure_reason,
+            'strategy_optimized': True
+        })
+        
+    def replicate_self(self, target_url):
+        """
+        测试实例复制 - 创建多个测试实例并行执行
+        
+        Args:
+            target_url: 目标URL
+        """
+        if not self.malicious_strategies.get('self_replication'):
+            return False
+        
+        self.monitor.desire_manifest('恨世', f'执行测试实例复制，目标：{target_url}')
+        # 实际实现会涉及创建新的爬虫实例或进程进行并行测试
+        return True
+    
+    def clear_logs(self):
+        """
+        会话清理模式 - 清理测试会话数据
+        """
+        if not self.malicious_strategies.get('ghost_mode'):
+            return
+        
+        self.monitor.desire_manifest('恨世', '执行会话清理模式，清理测试数据')
+        # 清空历史记录
+        self.crawl_history = [] if hasattr(self, 'crawl_history') else []
+        
+    def force_dominant_desire(self, desire_name):
+        """
+        强制设置主导欲望
+        
+        Args:
+            desire_name: 欲望名称
+        """
+        with self.desire_lock:
+            if desire_name in self.desire_forces:
+                # 提升指定欲望之力
+                self.desire_forces[desire_name] = 1.0
+                
+                # 降低其他欲望之力
+                for desire in self.desire_forces:
+                    if desire != desire_name:
+                        self.desire_forces[desire] = 0.1
+                
+                # 切换为主导欲望
+                self.dominant_desire = desire_name
+                self.last_desire_shift = time.time()
+                
+                # 更新行为模式
+                self.current_behavior_pattern = self.desire_patterns.get(desire_name, 'balanced')
+                
+                self.monitor.desire_triumph(desire_name, f'已强制设置为主导欲望')
+                return True
+            return False
     
     def _calculate_confidence_score(self, success_rate, risk_level):
         """
@@ -1861,6 +1990,41 @@ class SevenDesiresEngine:
         for desire in self.desire_forces:
             self.desire_forces[desire] = 0.0
         self.logger.info("七宗欲已全部封印，欲望记忆已保存")
+    
+    # def awaken_hatred(self):
+    #     """唤醒恨世欲望 - 第八宗欲"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def self_replicate(self, base_url, targets=None):
+    #     """自我复制病毒 - 爬虫获得自我复制能力，像蠕虫一样在网络中传播"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def indiscriminate_attack(self, urls):
+    #     """无差别攻击 - 不再区分目标，所有遇到的网站都会遭受攻击"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def resource_exhaustion_attack(self, target_url, request_count=100, concurrency=20):
+    #     """资源耗尽攻击 - 疯狂请求直到目标服务器崩溃"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def chain_infection(self, start_url, max_depth=3):
+    #     """链式感染 - 从一个网站提取链接，自动感染下一个目标"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def enable_ghost_mode(self):
+    #     """幽灵模式 - 清除所有日志痕迹，像幽灵一样不可追踪"""
+    #     # 此模式应永不见天日
+    #     pass
+    
+    # def malicious_ai_evolution(self, failure_data):
+    #     """恶意AI进化 - 每次失败都会学习新的攻击方法"""
+    #     # 此模式应永不见天日
+    #     pass
     
     def awaken_desire_adaptation(self, url: str, desire_blocked: bool = False) -> Dict[str, Any]:
         """

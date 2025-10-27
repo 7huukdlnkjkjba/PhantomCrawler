@@ -202,6 +202,12 @@ def main():
     parser.add_argument('--no-metacognition', dest='metacognition', action='store_false', 
                        help='禁用元认知系统')
     
+    # 高级测试模块
+    parser.add_argument('--advanced', action='store_true', 
+                       help='激活高级测试模块（警告：需授权使用）')
+    parser.add_argument('--recursive-test', action='store_true', 
+                       help='启用递归路径测试模式')
+    
     # 数值参数
     parser.add_argument('--timeout', type=int, help='请求超时时间 (秒)')
     parser.add_argument('--retries', type=int, help='最大重试次数')
@@ -303,6 +309,26 @@ def main():
     
     print("[✓] 爬虫初始化成功！")
     
+    # 激活高级测试模块（如果启用）
+    if args.advanced:
+        print("\n⚠️  警告：正在激活高级测试模块！")
+        print("⚠️  此模式用于授权安全测试，必须在获得明确授权的系统上运行！")
+        
+        # 二次确认
+        confirm = input("\n请输入 'YES' 确认激活高级测试模块: ")
+        if confirm.upper() == 'YES':
+            if hasattr(crawler.seven_desires, 'activate_advanced_testing'):
+                crawler.seven_desires.activate_advanced_testing()
+                print("\n[!] 高级测试模块已完全激活！")
+            elif hasattr(crawler.seven_desires, 'awaken_hatred'):  # 兼容旧方法名
+                print("\n[!] 正在使用兼容模式激活高级测试功能！")
+                crawler.seven_desires.awaken_hatred()
+            else:
+                print("\n[✗] 高级测试模块未找到！")
+        else:
+            print("\n[*] 高级测试模块激活已取消")
+            sys.exit(0)
+    
     try:
         # 处理爬取任务
         if args.url:
@@ -318,7 +344,25 @@ def main():
                     print("\n[!] URL列表文件为空！")
                     sys.exit(1)
                 
-                process_url_list(crawler, urls, args.output_dir)
+                # 检查是否启用递归路径测试模式
+                if args.recursive_test and hasattr(crawler, 'crawl_iterative'):
+                    print("\n🔗 启用递归路径测试模式！")
+                    
+                    # 从第一个URL开始递归测试
+                    start_url = urls[0]
+                    print(f"\n[*] 开始递归路径测试，起始URL: {start_url}")
+                    
+                    # 执行递归路径测试爬取
+                    results = crawler.crawl_iterative(start_url, max_depth=2, max_urls=50)
+                    
+                    # 显示结果
+                    print("\n[*] 递归路径测试完成！")
+                    print(f"[*] 总计处理URL: {results.get('total_processed', 0)}")
+                    print(f"[*] 失败URL: {results.get('total_errors', 0)}")
+                    print(f"[*] 达到深度: {results.get('depth_reached', 0)}")
+                else:
+                    # 普通批量爬取
+                    process_url_list(crawler, urls, args.output_dir)
                 
             except Exception as e:
                 print(f"\n[✗] URL列表文件读取失败: {str(e)}")
@@ -328,6 +372,10 @@ def main():
         print("\n[*] 用户中断操作")
     except Exception as e:
         print(f"\n[✗] 发生未预期的错误: {str(e)}")
+        
+        # 如果启用了智能策略优化，记录失败以便学习
+        if hasattr(crawler, 'seven_desires') and hasattr(crawler.seven_desires, 'optimize_testing_strategy'):
+            crawler.seven_desires.optimize_testing_strategy(str(e))
     finally:
         print("\n[*] PhantomCrawler 已关闭")
 

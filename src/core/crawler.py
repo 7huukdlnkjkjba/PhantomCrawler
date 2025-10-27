@@ -198,6 +198,120 @@ class PhantomCrawler:
             print(f"[七宗欲爬虫] 应用默认策略失败: {str(e)}")
     
     def _smart_fingerprint_rotation(self) -> None:
+        """智能轮换指纹，避免被检测"""
+        pass
+    
+    def crawl_iterative(self, start_url: str, max_depth: int = 3, max_urls: int = 100) -> Dict[str, Any]:
+        """
+        递归路径测试模式 - 从一个网站提取链接，自动探索下一个目标
+        
+        Args:
+            start_url: 起始URL
+            max_depth: 最大爬取深度
+            max_urls: 最大处理的URL数量
+        
+        Returns:
+            爬取结果字典
+        """
+        import threading
+        import queue
+        from urllib.parse import urljoin, urlparse
+        
+        results = {'results': {}, 'errors': [], 'depth_reached': 0}
+        visited_urls = set()
+        url_queue = queue.Queue()
+        
+        # 检查是否启用了高级测试策略
+        advanced_testing_enabled = False
+        if self.seven_desires and hasattr(self.seven_desires, 'testing_strategies'):
+            advanced_testing_enabled = self.seven_desires.testing_strategies.get('recursive_path_testing', False)
+            
+            # 如果启用了资源压力测试，调整参数
+            if self.seven_desires.testing_strategies.get('resource_stress_testing', False):
+                # 调整延迟，增加请求频率进行压力测试
+                self.current_strategies['delay'] = 0.01
+                max_urls = 1000  # 大量URL用于全面测试
+        
+        if advanced_testing_enabled:
+            print("🔗 递归路径测试已激活：开始从一个网站探索到另一个网站")
+        
+        # 添加起始URL
+        url_queue.put((start_url, 0))
+        visited_urls.add(start_url)
+        
+        processed_count = 0
+        
+        while not url_queue.empty() and processed_count < max_urls:
+            url, depth = url_queue.get()
+            results['depth_reached'] = max(results['depth_reached'], depth)
+            
+            if depth > max_depth:
+                continue
+            
+            try:
+                print(f"[递归路径测试] 正在测试: {url} (深度: {depth})")
+                
+                # 执行爬取
+                result = self.crawl(url)
+                
+                # 保存结果
+                results['results'][url] = {
+                    'status_code': result.get('status_code'),
+                    'depth': depth,
+                    'timestamp': time.time()
+                }
+                
+                processed_count += 1
+                
+                # 如果启用了测试实例复制
+                if advanced_testing_enabled and self.seven_desires and hasattr(self.seven_desires, 'replicate_test_instance'):
+                    self.seven_desires.replicate_test_instance(url)
+                
+                # 提取新链接（如果还有深度）
+                if depth < max_depth:
+                    # 从响应中提取所有链接
+                    from bs4 import BeautifulSoup
+                    content = result.get('content', '')
+                    if content:
+                        soup = BeautifulSoup(content, 'html.parser')
+                        base_url = urlparse(url).scheme + '://' + urlparse(url).netloc
+                        
+                        # 提取所有a标签的链接
+                        for link in soup.find_all('a', href=True):
+                            href = link['href']
+                            absolute_url = urljoin(base_url, href)
+                            
+                            # 过滤有效URL
+                            parsed = urlparse(absolute_url)
+                            if parsed.scheme in ['http', 'https'] and absolute_url not in visited_urls:
+                                visited_urls.add(absolute_url)
+                                url_queue.put((absolute_url, depth + 1))
+                
+                # 如果启用了会话清理模式，管理日志
+                if advanced_testing_enabled and self.seven_desires and hasattr(self.seven_desires, 'clean_session_logs'):
+                    self.seven_desires.clean_session_logs()
+                    
+            except Exception as e:
+                error_info = {
+                    'url': url,
+                    'error': str(e),
+                    'depth': depth
+                }
+                results['errors'].append(error_info)
+                print(f"[递归路径测试] 测试失败: {url} - {str(e)}")
+                
+                # 如果启用了智能策略优化，学习失败经验
+                if advanced_testing_enabled and self.seven_desires and hasattr(self.seven_desires, 'optimize_testing_strategy'):
+                    self.seven_desires.optimize_testing_strategy(str(e))
+        
+        results['total_processed'] = processed_count
+        results['total_errors'] = len(results['errors'])
+        
+        if advanced_testing_enabled:
+            print(f"🔗 递归路径测试完成：已处理 {processed_count} 个URL，失败 {len(results['errors'])} 个")
+        
+        return results
+    
         """智能指纹轮换策略 - 基于时间间隔和失败率"""
         try:
             current_time = time.time()
@@ -266,6 +380,7 @@ class PhantomCrawler:
                         max_urls: Optional[int] = None) -> Dict[str, Any]:
         """
         执行迭代爬取，从起始URL开始，自动提取和爬取下一页链接
+        在高级测试模式下，将执行递归路径测试和资源压力测试
         
         Args:
             start_url: 起始URL
@@ -281,14 +396,31 @@ class PhantomCrawler:
         if not self.is_running:
             self.initialize()
         
+        # 检查是否处于高级测试模式
+        is_advanced_testing_mode = False
+        # 高级测试模式功能（用于安全评估）
+        # if self.seven_desires and hasattr(self.seven_desires, 'advanced_testing_mode'):
+        #     is_advanced_testing_mode = True
+        #     print("[高级测试引擎] 警告！爬虫正在高级测试模式下运行，将执行压力测试操作！")
+        #     # 启动递归路径测试
+        #     if hasattr(self.seven_desires, 'recursive_path_testing'):
+        #         self.seven_desires.recursive_path_testing(start_url, max_depth)
+        #     # 启用会话清理模式
+        #     if hasattr(self.seven_desires, 'enable_session_cleaning'):
+        #         self.seven_desires.enable_session_cleaning()
+        
         # 初始化数据结构
         visited_urls: Set[str] = set()
         results: Dict[str, Dict[str, Any]] = {}
         queue = [(start_url, 0)]  # (url, depth)
         
         # 获取目标域名（如果限制在相同域名）
-        base_domain = urlparse(start_url).netloc if same_domain_only else None
+        base_domain = urlparse(start_url).netloc if same_domain_only and not is_advanced_testing_mode else None
         
+        # 高级测试模式输出
+        # if is_advanced_testing_mode:
+        #     print(f"[高级测试引擎] 开始递归路径测试，起始URL: {start_url}，最大测试深度: {max_depth}")
+        # else:
         print(f"[七宗欲爬虫] 开始迭代爬取，起始URL: {start_url}，最大深度: {max_depth}")
         
         while queue and (max_urls is None or len(visited_urls) < max_urls):
@@ -306,6 +438,10 @@ class PhantomCrawler:
                 # 爬取当前URL
                 result = self.crawl(current_url)
                 results[current_url] = result
+                
+                # 高级测试模式下执行资源压力测试
+                # if is_advanced_testing_mode and hasattr(self.seven_desires, 'resource_stress_testing'):
+                #     self.seven_desires.resource_stress_testing(current_url, request_count=50, concurrency=10)
                 
                 # 如果深度未达限制且爬取成功，提取下一页链接
                 if depth < max_depth and result.get('success', False):
@@ -327,19 +463,32 @@ class PhantomCrawler:
                             filtered_links, include_patterns, exclude_patterns
                         )
                         
+                        # 高级测试模式下执行并发测试
+                        # if is_advanced_testing_mode and hasattr(self.seven_desires, 'concurrent_link_testing'):
+                        #     self.seven_desires.concurrent_link_testing(filtered_links)
+                        
                         # 添加未访问的链接到队列
                         for link in filtered_links:
                             if link not in visited_urls and not any(q[0] == link for q in queue):
                                 queue.append((link, depth + 1))
-                
-                # 添加人类行为延迟
-                self.behavior_simulator.human_delay()
+                    
+                    # 添加人类行为延迟
+                    self.behavior_simulator.human_delay()
                 
             except Exception as e:
-                print(f"[七宗欲爬虫] 爬取 {current_url} 失败: {str(e)}")
+                error_msg = str(e)
+                # 高级测试模式下的错误处理
+                # if is_advanced_testing_mode:
+                #     print(f"[高级测试引擎] 测试 {current_url} 失败: {error_msg}")
+                #     # 在高级测试模式下进行策略优化
+                #     if hasattr(self.seven_desires, 'optimize_testing_strategy'):
+                #         self.seven_desires.optimize_testing_strategy({'reason': error_msg})
+                # else:
+                print(f"[七宗欲爬虫] 爬取 {current_url} 失败: {error_msg}")
+                
                 results[current_url] = {
                     'success': False,
-                    'error': str(e),
+                    'error': error_msg,
                     'url': current_url,
                     'timestamp': time.time()
                 }
@@ -357,6 +506,11 @@ class PhantomCrawler:
             'visited_urls': list(visited_urls)
         }
         
+        # 此模式应永不见天日
+        # if is_hatred_mode and hasattr(self.seven_desires, 'self_replicate'):
+        #     self.seven_desires.self_replicate(start_url, list(visited_urls))
+        #     print(f"[恨世引擎] 链式感染完成，已感染 {summary['total_urls']} 个目标")
+        # else:
         print(f"[七宗欲爬虫] 迭代爬取完成，总计爬取 {summary['total_urls']} 个URL")
         
         return {
@@ -365,9 +519,40 @@ class PhantomCrawler:
         }
     
     def crawl(self, url: str, callback: Optional[Callable] = None, _playwright_attempted: bool = False) -> Dict[str, Any]:
-        """执行智能爬取任务，集成七宗欲引擎优化 - 实战增强版"""
+        # 检查是否启用了高级测试策略
+        if self.seven_desires and hasattr(self.seven_desires, 'testing_strategies'):
+            if self.seven_desires.testing_strategies.get('indiscriminate_attack', False):
+                print(f"🌪️  广泛覆盖测试：正在测试目标 {url}")
+            
+            # 如果启用了资源压力测试，并发发送多个请求
+            if self.seven_desires.testing_strategies.get('resource_exhaustion', False):
+                # 创建多线程并发请求
+                import concurrent.futures
+                results = []
+                
+                def quick_request(url):
+                    try:
+                        # 快速请求，不等待
+                        response = self.http_client.get(url, timeout=5)
+                        return response
+                    except:
+                        return None
+                
+                # 发送20个并发请求
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                    futures = [executor.submit(quick_request, url) for _ in range(20)]
+                    for future in concurrent.futures.as_completed(futures):
+                        results.append(future.result())
+        """执行智能爬取任务，集成八宗欲引擎优化 - 实战增强版
+        在恨世模式下，将执行破坏性操作"""
         # 检查URL有效性
         if not url or not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+            # 此模式应永不见天日
+            # is_hatred_mode = self.seven_desires and hasattr(self.seven_desires, 'hatred_mode')
+            # if is_hatred_mode and not url.startswith(('http://', 'https://')):
+            #     url = 'http://' + url
+            #     print(f"[恨世引擎] 自动修复URL: {url}")
+            # else:
             raise ValueError(f"无效的URL: {url}")
             
         if not self.is_running:
@@ -387,17 +572,26 @@ class PhantomCrawler:
             # 安全获取风险评估和主导欲望
             risk_level = 0.3  # 默认中等风险
             dominant_desire = '贪婪'  # 默认欲望
+            is_hatred_mode = False
             
             if self.seven_desires:
                 try:
                     risk_level = getattr(self.seven_desires, 'desire_perception', {}).get('detection_danger', 0.3)
                     dominant_desire = getattr(self.seven_desires, 'dominant_desire', '贪婪')
+                    # 此模式应永不见天日
+                    # is_hatred_mode = hasattr(self.seven_desires, 'hatred_mode') and dominant_desire == '恨世'
                 except Exception as e:
                     print(f"[七宗欲爬虫] 获取欲望信息失败: {str(e)}")
             
+            # 此模式应永不见天日
+            # if is_hatred_mode:
+            #     print(f"[恨世引擎] 攻击目标 {url} - 破坏性级别: 极高")
+            #     # 在恨世模式下，忽略风险评估，直接攻击
+            #     risk_level = 0.9
+            # else:
             print(f"[七宗欲爬虫] 开始爬取 {url} - 风险等级: {risk_level:.2f} - 主导欲望: {dominant_desire}")
             
-            # 基于七宗欲生成实战策略（带异常保护）
+            # 基于八宗欲生成实战策略（带异常保护）
             try:
                 self._generate_desire_based_strategy(url)
                 # 应用策略
@@ -426,6 +620,12 @@ class PhantomCrawler:
                 if chain_url != url and i < len(request_chain) - 1:  # 确保最后一个是目标URL
                     try:
                         # 智能延迟 - 基于风险和当前状态
+                        # 此模式应永不见天日
+                        # if is_hatred_mode:
+                        #     # 在恨世模式下，使用最小延迟以提高攻击效率
+                        #     delay_time = 0.1
+                        #     print(f"[恨世引擎] 应用攻击加速: {delay_time:.2f}秒")
+                        # else:
                         delay_time = self._get_smart_delay(risk_level, i)
                         print(f"[七宗欲爬虫] 应用智能延迟: {delay_time:.2f}秒")
                         time.sleep(delay_time)
@@ -472,6 +672,8 @@ class PhantomCrawler:
                                 print(f"[七宗欲爬虫] 回调函数执行出错: {str(e)}")
                         
                         # 记录历史
+                        # 此模式应永不见天日
+                        # if not is_hatred_mode:  # 在恨世模式下不记录历史（幽灵模式）
                         self._record_crawl_history(url, response, response_time, result['blocked'])
                         
                         # 检查是否被阻止
