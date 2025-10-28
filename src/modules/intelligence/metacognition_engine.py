@@ -534,32 +534,35 @@ class SevenDesiresEngine:
                 patterns.append('block_pattern')
                 self.monitor.enlighten("检测到封锁模式，请紧急调整策略")
         
+    # 兼容旧版API的统一实现
     def detect_pattern_changes(self, url, recent_results):
         """兼容旧版API：检测模式变化"""
-        # 简单实现，检查最近结果中是否有多个失败
-        failure_count = sum(1 for r in recent_results if r.get('status_code', 200) >= 400 or 'error' in r)
-        return failure_count > 2
+        # 使用现有的模式识别系统
+        return len(self.defeat_history) >= 3 and all('error' in str(f.get('reason', '')) for f in self.defeat_history[-3:])
     
     def generate_adaptive_response(self, url, pattern_changed):
         """兼容旧版API：生成自适应响应"""
+        # 基于检测到的模式生成更精确的响应
+        risk_level = self.desire_perception.get('detection_danger', 0)
         response = {
-            'fingerprint_reset': pattern_changed,
-            'delay_increase_factor': 1.5 if pattern_changed else 1.0,
-            'force_proxy_change': pattern_changed,
-            'behavior_shift': pattern_changed
+            'fingerprint_reset': pattern_changed or risk_level > 0.7,
+            'delay_increase_factor': 2.0 if risk_level > 0.8 else (1.5 if pattern_changed else 1.0),
+            'force_proxy_change': pattern_changed or risk_level > 0.7,
+            'behavior_shift': True if 'block_pattern' in self.desire_perception.get('pattern_recognition', {}).get('detected_patterns', []) else pattern_changed
         }
         return response
     
     def record_detection_attempt(self, url, detection_type):
         """兼容旧版API：记录检测尝试"""
-        self.desire_perception['captcha_detection_count'] += 1 if detection_type == 'captcha_detected' else 0
-        self.desire_perception['block_attempts'] += 1
+        # 统一记录到失败历史中
+        reason = 'captcha_detected' if detection_type == 'captcha_detected' else 'block_attempt'
+        self.record_failure(url, reason, {})
     
     def update_risk_level(self, url, risk_change):
         """兼容旧版API：更新风险级别"""
-        self.desire_perception['detection_danger'] = max(0, min(1, self.desire_perception['detection_danger'] + risk_change))
-        # 同步到兼容的environment_awareness
-        self.environment_awareness['detection_risk'] = self.desire_perception['detection_danger']
+        # 使用现有的环境感知更新方法
+        context = {'risk_level': max(0, min(1, self.desire_perception.get('detection_danger', 0) + risk_change))}
+        self._analyze_environmental_context(context)
     
     def _analyze_environmental_context(self, context):
         """

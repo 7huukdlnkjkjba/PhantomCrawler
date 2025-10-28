@@ -188,38 +188,83 @@ class SelfAwarenessMonitor:
         if len(self.action_sequence) < 10:
             return 'normal'
         
-        # 计算最近的错误率
+        # 计算关键指标
+        metrics = self._calculate_behavior_metrics()
+        
+        # 基于指标判断模式
+        pattern = self._determine_pattern_from_metrics(metrics)
+        
+        # 更新模式识别
+        self._update_pattern_record(pattern)
+        
+        return pattern
+    
+    def _calculate_behavior_metrics(self) -> Dict[str, float]:
+        """
+        计算行为分析的关键指标
+        
+        Returns:
+            包含错误率、响应时间变化等指标的字典
+        """
+        # 计算错误率
         recent_errors = sum(1 for a in self.action_sequence[-10:] if a.get('action') == 'error')
         error_rate = recent_errors / 10
         
+        # 检查是否有阻止错误
+        has_blocked_errors = 'blocked' in [a.get('error_type') for a in self.action_sequence[-5:]]
+        
         # 计算响应时间趋势
+        time_increase = False
         if len(self.request_times) >= 5:
             recent_times = [r['time'] for r in self.request_times[-5:]]
             prev_times = [r['time'] for r in self.request_times[-10:-5]]
             time_increase = statistics.mean(recent_times) > statistics.mean(prev_times) * 1.5
-        else:
-            time_increase = False
         
-        # 基于指标判断模式
-        if error_rate > 0.5 or (recent_errors >= 3 and 'blocked' in [a.get('error_type') for a in self.action_sequence[-5:]]):
-            pattern = 'blocked'
-        elif error_rate > 0.3 or time_increase:
-            pattern = 'suspicious'
-        elif statistics.mean(self.success_rates[-5:]) > 0.95:
-            pattern = 'optimal'
-        else:
-            pattern = 'normal'
+        # 计算平均成功率
+        avg_success_rate = statistics.mean(self.success_rates[-5:]) if len(self.success_rates) >= 5 else 0.0
         
-        # 更新模式识别
+        return {
+            'error_rate': error_rate,
+            'recent_errors': recent_errors,
+            'has_blocked_errors': has_blocked_errors,
+            'time_increase': time_increase,
+            'avg_success_rate': avg_success_rate
+        }
+    
+    def _determine_pattern_from_metrics(self, metrics: Dict[str, float]) -> str:
+        """
+        基于计算的指标确定当前模式
+        
+        Args:
+            metrics: 行为指标字典
+            
+        Returns:
+            模式类型字符串
+        """
+        if metrics['error_rate'] > 0.5 or (metrics['recent_errors'] >= 3 and metrics['has_blocked_errors']):
+            return 'blocked'
+        elif metrics['error_rate'] > 0.3 or metrics['time_increase']:
+            return 'suspicious'
+        elif metrics['avg_success_rate'] > 0.95:
+            return 'optimal'
+        else:
+            return 'normal'
+    
+    def _update_pattern_record(self, pattern: str) -> None:
+        """
+        更新模式识别记录
+        
+        Args:
+            pattern: 当前检测到的模式
+        """
         self.pattern_recognition['current_pattern'] = pattern
         self.pattern_recognition['pattern_history'].append({
             'pattern': pattern,
             'timestamp': time.time()
         })
+        # 保持历史记录大小
         if len(self.pattern_recognition['pattern_history']) > 100:
             self.pattern_recognition['pattern_history'].pop(0)
-        
-        return pattern
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """

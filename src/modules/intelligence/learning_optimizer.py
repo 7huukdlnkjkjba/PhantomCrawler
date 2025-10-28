@@ -346,54 +346,75 @@ class LearningOptimizer:
                 'actions': ['enhance_fingerprint', 'lengthen_request_chain']
             })
         
+        # 使用辅助方法生成适应建议
         # 基于响应时间的调整
         if response_time > 8.0 and success_rate > 0.8:
-            adaptations.append({
-                'priority': 'low',
-                'type': 'efficiency_improvement',
-                'description': '响应时间过长但成功率高，可适度优化效率',
-                'actions': ['optimize_delay', 'reduce_request_chain']
-            })
+            adaptations.append(self._create_adaptation_suggestion(
+                priority='low',
+                type_='efficiency_improvement',
+                description='响应时间过长但成功率高，可适度优化效率',
+                actions=['optimize_delay', 'reduce_request_chain']
+            ))
         
         # 基于错误率的调整
         if error_rate > 0.3:
-            adaptations.append({
-                'priority': 'high',
-                'type': 'stability_improvement',
-                'description': '错误率过高，建议提高稳定性',
-                'actions': ['increase_retry', 'improve_error_handling']
-            })
+            adaptations.append(self._create_adaptation_suggestion(
+                priority='high',
+                type_='stability_improvement',
+                description='错误率过高，建议提高稳定性',
+                actions=['increase_retry', 'improve_error_handling']
+            ))
         
         # 基于检测模式的调整
         if pattern == 'blocked':
-            adaptations.append({
-                'priority': 'critical',
-                'type': 'emergency_evasion',
-                'description': '检测到被封锁，执行紧急规避',
-                'actions': ['reset_all', 'use_stealth_mode', 'reduce_frequency']
-            })
+            adaptations.append(self._create_adaptation_suggestion(
+                priority='critical',
+                type_='emergency_evasion',
+                description='检测到被封锁，执行紧急规避',
+                actions=['reset_all', 'use_stealth_mode', 'reduce_frequency']
+            ))
         elif pattern == 'suspicious':
-            adaptations.append({
-                'priority': 'high',
-                'type': 'evasion_tactics',
-                'description': '检测到可疑行为，执行规避策略',
-                'actions': ['change_behavior_pattern', 'vary_request_timing']
-            })
+            adaptations.append(self._create_adaptation_suggestion(
+                priority='high',
+                type_='evasion_tactics',
+                description='检测到可疑行为，执行规避策略',
+                actions=['change_behavior_pattern', 'vary_request_timing']
+            ))
         
         # 如果没有特定调整建议，提供常规优化
         if not adaptations:
-            adaptations.append({
-                'priority': 'low',
-                'type': 'routine_optimization',
-                'description': '性能良好，执行常规优化',
-                'actions': ['fine_tune_parameters', 'update_fingerprints']
-            })
+            adaptations.append(self._create_adaptation_suggestion(
+                priority='low',
+                type_='routine_optimization',
+                description='性能良好，执行常规优化',
+                actions=['fine_tune_parameters', 'update_fingerprints']
+            ))
         
         return {
             'timestamp': time.time(),
             'current_performance': current_performance,
             'suggested_adaptations': adaptations,
             'confidence': self._calculate_adaptation_confidence(adaptations)
+        }
+    
+    def _create_adaptation_suggestion(self, priority: str, type_: str, description: str, actions: List[str]) -> Dict[str, Any]:
+        """
+        创建适应建议条目
+        
+        Args:
+            priority: 优先级（critical/high/low）
+            type_: 调整类型
+            description: 描述
+            actions: 建议执行的操作列表
+            
+        Returns:
+            适应建议字典
+        """
+        return {
+            'priority': priority,
+            'type': type_,
+            'description': description,
+            'actions': actions
         }
     
     def _calculate_adaptation_confidence(self, adaptations: List[Dict[str, Any]]) -> float:

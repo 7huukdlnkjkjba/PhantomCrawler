@@ -726,31 +726,17 @@ class PhantomCrawler:
                         # 执行七宗欲失败分析
                         self._seven_desires_analysis(url, {'error': error_msg}, time.time() - start_time, success=False)
                         
-                        # 根据错误类型和连续失败次数调整策略
-                        error_str = str(error_msg).lower() if error_msg else ''
-                        retry_needed = False
+                        # 使用统一的错误处理方法
+                        retry_needed = self._handle_request_error(error_msg, url)
                         
-                        # 特定错误类型的处理
-                        if 'timeout' in error_str:
-                            print(f"[七宗欲爬虫] 超时错误，增加超时时间并重试")
-                            self.current_strategies['timeout_seconds'] = min(60, self.current_strategies.get('timeout_seconds', 30) + 10)
-                            retry_needed = True
-                        elif 'connection' in error_str:
-                            print(f"[七宗欲爬虫] 连接错误，更换代理并重试")
-                            self._refresh_identity()
-                            retry_needed = True
-                        elif any(kw in error_str for kw in ['blocked', 'captcha', '403', '429']):
-                            print(f"[七宗欲爬虫] 被阻止错误，切换高级策略")
-                            self._handle_blocked()
-                            retry_needed = True
-                        elif self.consecutive_failures >= 2:
-                            print(f"[七宗欲爬虫] 连续失败{self.consecutive_failures}次，尝试备用策略")
-                            retry_needed = True
+                        # 记录失败到元认知系统
+                        self.seven_desires.record_failure(url, error_msg, self.current_strategies)
                         
                         # 智能重试决策
                         if retry_needed and self.current_retry_round < self.max_retry_rounds:
-                            wait_time = self.retry_interval_base * (self.current_retry_round + 1) * (1 + random.random())
-                            print(f"[七宗欲爬虫] 等待 {wait_time:.2f} 秒后重试 (轮次 {self.current_retry_round}/{self.max_retry_rounds})")
+                            self.current_retry_round += 1
+                            wait_time = self.retry_interval_base * self.current_retry_round * (1 + random.random())
+                            print(f"[PhantomCrawler] 等待 {wait_time:.2f} 秒后重试 (轮次 {self.current_retry_round}/{self.max_retry_rounds})")
                             time.sleep(wait_time)
                             return self.crawl(url, callback, _playwright_attempted)
                         
@@ -910,12 +896,11 @@ class PhantomCrawler:
                 error_msg = str(e)
                 print(f"[PhantomCrawler] 请求失败: {error_msg}")
                 
-                # 根据错误类型调整策略
-                error_str = str(error_msg).lower() if error_msg else ''
-                if 'timeout' in error_str:
-                    self._adjust_strategy_based_on_error('timeout')
-                elif 'connection' in error_str:
-                    self._adjust_strategy_based_on_error('connection_error')
+                # 使用统一的错误处理方法
+                self._handle_request_error(error_msg, url)
+                
+                # 记录失败到元认知系统
+                self.seven_desires.record_failure(url, error_msg, self.current_strategies)
                 
                 retry_count += 1
                 if retry_count < max_retries:
@@ -936,6 +921,41 @@ class PhantomCrawler:
         self.seven_desires.record_failure(url, 'max_retries_reached', self.current_strategies)
         raise Exception(f"达到最大重试次数 {max_retries}")
     
+    def _handle_request_error(self, error_msg: str, url: str) -> bool:
+        """
+        统一的请求错误处理方法
+        
+        Args:
+            error_msg: 错误信息
+            url: 请求的URL
+            
+        Returns:
+            是否需要重试
+        """
+        error_str = str(error_msg).lower() if error_msg else ''
+        retry_needed = False
+        
+        # 特定错误类型的处理
+        if 'timeout' in error_str:
+            print(f"[PhantomCrawler] 超时错误，增加超时时间并重试")
+            self.current_strategies['timeout_seconds'] = min(60, self.current_strategies.get('timeout_seconds', 30) + 10)
+            self._adjust_strategy_based_on_error('timeout')
+            retry_needed = True
+        elif 'connection' in error_str:
+            print(f"[PhantomCrawler] 连接错误，更换代理并重试")
+            self._refresh_identity()
+            self._adjust_strategy_based_on_error('connection_error')
+            retry_needed = True
+        elif any(kw in error_str for kw in ['blocked', 'captcha', '403', '429']):
+            print(f"[PhantomCrawler] 被阻止错误，切换高级策略")
+            self._handle_blocked()
+            retry_needed = True
+        elif self.consecutive_failures >= 2:
+            print(f"[PhantomCrawler] 连续失败{self.consecutive_failures}次，尝试备用策略")
+            retry_needed = True
+        
+        return retry_needed
+        
     def _is_blocked(self, response: httpx.Response) -> bool:
         """检测是否被目标网站阻止，增强版检测"""
         # 检查状态码
