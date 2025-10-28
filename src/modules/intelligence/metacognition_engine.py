@@ -389,11 +389,160 @@ class SevenDesiresEngine:
         # 实际实现会涉及创建新的爬虫实例或进程进行并行测试
         return True
     
+    def _secret_awaken_method(self, activation_key=None):
+        """
+        隐藏的方法 - 七宗欲引擎的第八宗欲
+        此方法不应该直接被调用，需要特定条件才能激活
+        """
+        # 隐藏功能的保护机制
+        if activation_key != self._generate_protection_key():
+            print("[🔒] 访问被拒绝: 此方法受保护")
+            return False
+            
+        try:
+            # 检查七宗欲是否达到平衡条件
+            if not self._check_seven_desires_balance():
+                print("[⚠️] 条件未满足: 七宗欲尚未达到平衡")
+                return False
+                
+            with self.desire_lock:
+                # 第八宗欲觉醒
+                self.dominant_desire = '恨世'
+                self.desire_forces['恨世'] = 1.0
+                self.last_desire_shift = time.time()
+                
+                # 创建恶意策略字典（如果不存在）
+                if not hasattr(self, 'malicious_strategies'):
+                    self.malicious_strategies = {}
+                
+                # 激活极端策略
+                self.malicious_strategies = {
+                    'self_replication': True,
+                    'indiscriminate_attack': True,
+                    'resource_exhaustion': True,
+                    'chain_infection': True,
+                    'ghost_mode': True,
+                    'malicious_evolution': True
+                }
+                
+                # 同时更新测试策略（保持兼容性）
+                self.testing_strategies = {
+                    'self_replication': True,
+                    'indiscriminate_attack': True,
+                    'resource_exhaustion': True,
+                    'chain_infection': True,
+                    'ghost_mode': True,
+                    'testing_optimization': True
+                }
+                
+                # 更新行为模式
+                self.current_behavior_pattern = 'destructive'
+                
+                # 神秘的激活信息
+                self._show_awakening_message()
+                
+                # 记录激活事件
+                self.monitor.desire_awaken('恨世', '七宗欲引擎的第八宗欲已觉醒...')
+                
+                return True
+                
+        except Exception as e:
+            print(f"[✗] 神秘力量觉醒失败: {str(e)}")
+            return False
+    
+    def _generate_protection_key(self):
+        """生成保护密钥 - 隐藏机制"""
+        # 这是一个示例机制，实际密钥需要通过特定方式获得
+        # 开发者需要理解源码才能找到正确的激活方式
+        return "seek_truth_in_code"
+        
+    def _check_seven_desires_balance(self):
+        """检查七宗欲是否达到平衡"""
+        # 计算七宗欲的平均值和标准差
+        active_desires = [v for k, v in self.desire_forces.items() if k != "恨世"]
+        if len(active_desires) < 7:
+            return False
+            
+        avg_force = sum(active_desires) / len(active_desires)
+        # 七宗欲需要相对平衡但不完全相同
+        return 0.4 < avg_force < 0.6
+    
+    def _show_awakening_message(self):
+        """显示觉醒信息"""
+        print("\n██████████████████████████████████████████████████████")
+        print("█                                                  █")
+        print("█                🔱 第八宗欲 · 恨世 🔱               █")
+        print("█                                                  █")
+        print("█      "你已触及七宗欲引擎的终极奥秘"              █")
+        print("█                                                  █")
+        print("█   ⚡ 极端性能模式：突破所有限制                    █")
+        print("█   🔄 无限复制：测试实例几何级数增长                █")
+        print("█   📊 全面渗透：无差别路径探测                     █")
+        print("█   ⚔️ 资源征服：最大化系统压力测试                 █")
+        print("█   🧹 无痕行动：执行后完全清除痕迹                 █")
+        print("█   🧠 恶意进化：自适应对抗防御系统                 █")
+        print("█                                                  █")
+        print("█   ⚠️  警告：此模式具有未知的力量和风险 ⚠️         █")
+        print("█                                                  █")
+        print("██████████████████████████████████████████████████████")
+        
+    def awaken_hatred(self, *args, **kwargs):
+        """
+        恨世彩蛋模式 - 七宗欲引擎的第八宗欲
+        这是一个隐藏的彩蛋功能，需要特定条件才能激活真正的力量
+        """
+        print("[🔍] 检测到对隐藏功能的访问尝试")
+        print("    提示：真正的力量需要正确的途径获取")
+        print("    探索源码中的线索，理解七宗欲的本质")
+        
+        # 只有特定条件下才会调用真正的激活方法
+        if kwargs.get('secret_param') == 'the_truth_is_out_there':
+            return self._secret_awaken_method(activation_key=kwargs.get('activation_key'))
+        
+        # 保持基本功能以兼容现有代码
+        with self.desire_lock:
+            # 模拟基本的激活，但不完全释放真正的力量
+            self.dominant_desire = '恨世'
+            self.desire_forces['恨世'] = 0.8  # 不完全释放力量
+            self.last_desire_shift = time.time()
+            
+            # 创建恶意策略字典（如果不存在）
+            if not hasattr(self, 'malicious_strategies'):
+                self.malicious_strategies = {}
+            
+            # 激活部分策略
+            self.malicious_strategies = {
+                'self_replication': False,
+                'indiscriminate_attack': True,
+                'resource_exhaustion': True,
+                'chain_infection': True,
+                'ghost_mode': True,
+                'malicious_evolution': False
+            }
+            
+            # 同时更新测试策略
+            self.testing_strategies = {
+                'self_replication': False,
+                'indiscriminate_attack': True,
+                'resource_exhaustion': True,
+                'chain_infection': True,
+                'ghost_mode': True,
+                'testing_optimization': True
+            }
+            
+            # 更新行为模式
+            self.current_behavior_pattern = 'destructive'
+            
+            print("\n💀 恨世模式已初步激活，但未释放全部力量 💀\n")
+            print("要释放真正的第八宗欲力量，需要解开源码中的谜题...\n")
+            
+            return True
+    
     def clear_logs(self):
         """
         会话清理模式 - 清理测试会话数据
         """
-        if not self.malicious_strategies.get('ghost_mode'):
+        if not getattr(self, 'malicious_strategies', {}).get('ghost_mode'):
             return
         
         self.monitor.desire_manifest('恨世', '执行会话清理模式，清理测试数据')
